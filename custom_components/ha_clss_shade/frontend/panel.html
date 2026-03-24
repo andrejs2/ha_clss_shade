@@ -101,23 +101,29 @@
       border-color: #555 !important;
     }
 
-    /* ALL vertex markers: bright red dots — override Leaflet defaults */
-    .leaflet-div-icon {
+    /* ALL vertex markers: bright red dots — nuclear override v3 */
+    .leaflet-div-icon,
+    .leaflet-editing-icon,
+    .leaflet-marker-icon.leaflet-div-icon,
+    .leaflet-marker-icon.leaflet-editing-icon,
+    .vertex-red,
+    .leaflet-marker-icon.vertex-red {
       background: #ff2222 !important;
-      border: 2.5px solid #fff !important;
+      border: 3px solid #ffffff !important;
       border-radius: 50% !important;
-      width: 16px !important;
-      height: 16px !important;
-      margin-left: -8px !important;
-      margin-top: -8px !important;
-      box-shadow: 0 0 8px 2px rgba(255,34,34,0.8), 0 0 3px rgba(0,0,0,0.6);
+      width: 18px !important;
+      height: 18px !important;
+      margin-left: -9px !important;
+      margin-top: -9px !important;
+      box-shadow: 0 0 10px 3px rgba(255,34,34,0.9), 0 0 4px rgba(255,255,255,0.5) !important;
+      opacity: 1 !important;
     }
   </style>
 </head>
 <body>
 
 <div class="toolbar">
-  <h1>CLSS Shade — Zone Editor</h1>
+  <h1>CLSS Shade — Zone Editor <small style="color:#666;font-size:11px">v3</small></h1>
   <span class="status" id="status">Nalagam...</span>
   <button class="primary" id="btn-save" disabled>Shrani</button>
 </div>
@@ -281,19 +287,15 @@
     drawnItems = new L.FeatureGroup();
     map.addLayer(drawnItems);
 
-    // Custom vertex icons — bright red dots with glow
+    // Custom vertex icons — bright red dots 18px
     var vertexIcon = new L.DivIcon({
-      className: 'vertex-icon',
-      iconSize: [16, 16],
-      iconAnchor: [8, 8],
-    });
-    var vertexIconMid = new L.DivIcon({
-      className: 'vertex-icon-mid',
-      iconSize: [12, 12],
-      iconAnchor: [6, 6],
+      className: 'leaflet-div-icon leaflet-editing-icon vertex-red',
+      iconSize: new L.Point(18, 18),
     });
 
-    // Override default edit vertex icons globally
+    // Override ALL Leaflet.draw prototypes BEFORE creating draw control
+    L.Draw.Polyline.prototype.options.icon = vertexIcon;
+    L.Draw.Polyline.prototype.options.touchIcon = vertexIcon;
     if (L.Edit && L.Edit.PolyVerticesEdit) {
       L.Edit.PolyVerticesEdit.prototype.options.icon = vertexIcon;
       L.Edit.PolyVerticesEdit.prototype.options.touchIcon = vertexIcon;
@@ -308,8 +310,6 @@
           showArea: true,
           shapeOptions: { color: '#2196F3', weight: 2, fillOpacity: 0.3 },
           metric: true,
-          icon: vertexIcon,
-          touchIcon: vertexIcon,
         },
         rectangle: {
           showArea: true,
