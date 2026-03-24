@@ -29,10 +29,30 @@ http://gis.arso.gov.si/lidar/GKOT/laz/b_{block}/D96TM/TM_{tileE}_{tileN}.laz
 - northingKm = floor(northing / 1000)
 
 ### Block number
-- **NEZNANO**: Kako mapirati tile koordinate na block stevilko
-- QGIS plugin zahteva rocni vnos
-- Moznosti: lookup tabela, scraping, brute force (probaj b_1 do b_50?)
-- **TODO**: Raziskati CLSS portal za boljsi nacin
+Reseno z avtomatskim HEAD probingom (concurrent, 5 hkrati, range b_1-b_60).
+Rezultat se kesira v `block_cache.json`. Mapiranje odkrito 2026-03-24:
+
+| Block | Priblizno obmocje | Vzorcni tili |
+|-------|-------------------|--------------|
+| b_11 | Notranjska | TM_400_80 |
+| b_12 | Dolenjska/Bela krajina | TM_420_80, TM_440_60, TM_460_60 |
+| b_13 | Posavje | TM_460_80, TM_480_60 |
+| b_14 | Stajerska jug | TM_500_80, TM_520_100, TM_540_100 |
+| b_15 | Kocevje | TM_420_40, TM_440_40 |
+| b_16 | Obsotelje | TM_480_80, TM_500_40, TM_520_60 |
+| b_21 | Koper/Primorska | TM_400_40 |
+| b_22 | Stajerska sever | TM_500_120, TM_540_120 |
+| b_23 | Ptuj/Ormoz | TM_500_140, TM_540_160 |
+| b_24 | Pomurje JV | TM_580_140, TM_600_180 |
+| b_25 | Pomurje JZ | TM_560_140, TM_560_160 |
+| b_26 | Maribor | TM_560_120 |
+| b_31 | Gorenjska sever | TM_440_140, TM_480_140 |
+| b_32 | Skofja Loka/Cerkno | TM_420_100, TM_440_100 |
+| b_33 | Idrija/Tolmin | TM_380_120, TM_400_100 |
+| b_34 | Zasavje/Trbovlje | TM_480_120 |
+| b_35 | Ljubljana | TM_460_100, TM_480_100 |
+| b_36 | Kranj | TM_440_120, TM_460_120 |
+| b_37 | Goriska/Bovec | TM_400_140, TM_420_140 |
 
 ---
 
