@@ -24,11 +24,50 @@
     "step": {
       "init": {
         "title": "CLSS Shade Options",
+        "description": "Custom zones:\n{custom_zones}",
         "data": {
           "radius": "Analysis radius (meters)",
-          "include_neighbors": "Include neighboring tiles (3x3 km)"
+          "include_neighbors": "Include neighboring tiles (3x3 km)",
+          "zone_action": "Zone management"
+        }
+      },
+      "add_zone": {
+        "title": "Add Zone",
+        "description": "Choose a name, type, and shape for the new zone.\nOffsets are in meters from the configured center point.\nUse CLSS viewer (clss.si) or Google Maps to measure.",
+        "data": {
+          "zone_name": "Zone name",
+          "zone_type": "Zone type",
+          "zone_shape": "Zone shape"
+        }
+      },
+      "add_polygon": {
+        "title": "Add Polygon Zone: {zone_name}",
+        "description": "Enter polygon vertices as meter offsets (east, north) from center.\nFormat: `E,N; E,N; E,N; ...`\nExample: `-10,-5; 10,-5; 10,5; -10,5`\nAt least 3 vertices required.",
+        "data": {
+          "vertices": "Vertices (east,north pairs separated by semicolons)"
+        }
+      },
+      "add_circle": {
+        "title": "Add Circular Zone: {zone_name}",
+        "description": "Define a circular zone with offset from center and radius.\nPositive east = right, positive north = up.",
+        "data": {
+          "offset_east": "Offset East (meters)",
+          "offset_north": "Offset North (meters)",
+          "zone_radius": "Radius (meters)"
+        }
+      },
+      "remove_zone": {
+        "title": "Remove Zone",
+        "description": "Select a custom zone to remove.",
+        "data": {
+          "zone_to_remove": "Zone to remove"
         }
       }
+    },
+    "error": {
+      "zone_name_exists": "Zone name already exists",
+      "zone_name_empty": "Zone name cannot be empty",
+      "invalid_vertices": "Invalid vertex format. Use: E,N; E,N; E,N (at least 3 vertices)"
     }
   },
   "entity": {

@@ -74,10 +74,13 @@ class ArsoLidarDownloader:
             except (json.JSONDecodeError, OSError):
                 self._block_cache = {}
 
-    def _save_block_cache(self) -> None:
-        """Persist block cache to disk."""
+    async def _save_block_cache(self) -> None:
+        """Persist block cache to disk (async-safe)."""
         try:
-            self._block_cache_file.write_text(json.dumps(self._block_cache, indent=2))
+            data = json.dumps(self._block_cache, indent=2)
+            await asyncio.get_event_loop().run_in_executor(
+                None, self._block_cache_file.write_text, data
+            )
         except OSError as err:
             _LOGGER.warning("Failed to save block cache: %s", err)
 
@@ -143,7 +146,7 @@ class ArsoLidarDownloader:
             )
 
         self._block_cache[key] = found_block
-        self._save_block_cache()
+        await self._save_block_cache()
         _LOGGER.info("Tile %s found in block b_%d", fname, found_block)
         return found_block
 
@@ -182,15 +185,22 @@ class ArsoLidarDownloader:
                 downloaded = 0
                 tmp_path = local_path.with_suffix(".laz.tmp")
 
-                with open(tmp_path, "wb") as f:
-                    async for chunk in resp.content.iter_chunked(1024 * 256):
-                        f.write(chunk)
-                        downloaded += len(chunk)
-                        if total > 0:
-                            pct = downloaded / total * 100
-                            _LOGGER.debug("Downloading %s: %.1f%%", fname, pct)
+                # Read all chunks into memory, then write in executor
+                chunks: list[bytes] = []
+                async for chunk in resp.content.iter_chunked(1024 * 256):
+                    chunks.append(chunk)
+                    downloaded += len(chunk)
+                    if total > 0:
+                        pct = downloaded / total * 100
+                        _LOGGER.debug("Downloading %s: %.1f%%", fname, pct)
 
-                tmp_path.rename(local_path)
+                data = b"".join(chunks)
+
+                def _write_file() -> None:
+                    tmp_path.write_bytes(data)
+                    tmp_path.rename(local_path)
+
+                await asyncio.get_event_loop().run_in_executor(None, _write_file)
                 size_mb = local_path.stat().st_size / (1024 * 1024)
                 _LOGGER.info("Downloaded %s (%.1f MB)", fname, size_mb)
                 return local_path

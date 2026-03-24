@@ -11,8 +11,8 @@
 - [x] Config flow za HA (lokacija, radij)
 - [x] Coordinator + senzorji (shade%, sun%, azimut, elevacija, daylight)
 - [ ] Testirati integracijo v pravi HA instanci
-- [ ] Dodati zone support (poligoni za streho, vrt, teraso)
-- [ ] Integracija z `slovenian_weather_integration` entitetami (soncno sevanje, oblacnost)
+- [x] Dodati zone support (poligoni za streho, vrt, teraso) — auto-detect + custom polygon/circle cone v options flow
+- [x] Integracija z `slovenian_weather_integration` entitetami (soncno sevanje, oblacnost)
 
 ### Prioriteta: SREDNJA
 - [ ] PV predikcija modul (shadow map + soncno sevanje + oblacnost napoved)
@@ -22,7 +22,7 @@
 - [ ] Options flow: moznost ponovnega prenosa LiDAR podatkov
 
 ### Prioriteta: NIZKA
-- [ ] Frontend panel (3D vizualizacija)
+- [x] Frontend panel — interaktivni zone editor s karto (Leaflet + Leaflet.draw)
 - [ ] Blueprints za avtomatizacije (rolete, zalivanje)
 - [ ] Brands submission (icon za HA)
 - [ ] Submission na HACS default repo
@@ -44,7 +44,7 @@
 
 ## Bugi
 
-(Se ni znanih bugov — treba testirati v HA)
+- [x] Blocking I/O v event loop (slovenian_downloader.py: write_text, open) — popravljeno z run_in_executor
 
 ---
 

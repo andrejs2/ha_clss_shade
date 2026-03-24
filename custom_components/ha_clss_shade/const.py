@@ -51,6 +51,7 @@ CONF_LONGITUDE = "longitude"
 CONF_RADIUS = "radius"
 CONF_NAME = "name"
 CONF_INCLUDE_NEIGHBORS = "include_neighbors"
+CONF_CUSTOM_ZONES = "custom_zones"
 
 # Data storage
 DATA_DIR_NAME = "clss_shade"

@@ -79,12 +79,17 @@ GLOBAL_SENSORS: tuple[SensorEntityDescription, ...] = (
     ),
 )
 
-# Zone icon mapping
+# Zone icon mapping by zone_type
 ZONE_ICONS = {
     "roof": "mdi:home-roof",
     "garden": "mdi:flower",
     "trees": "mdi:tree",
     "open": "mdi:grass",
+    "custom": "mdi:select-group",
+    "terrace": "mdi:deck",
+    "pv": "mdi:solar-panel-large",
+    "parking": "mdi:parking",
+    "pool": "mdi:pool",
 }
 
 
@@ -103,9 +108,10 @@ async def async_setup_entry(
     for description in GLOBAL_SENSORS:
         entities.append(ClssShadeSensor(coordinator, entry, description))
 
-    # Per-zone sensors (shade% and sun% for each auto-detected zone)
+    # Per-zone sensors (shade% and sun% for each zone)
     for zone_name in coordinator.zone_names:
-        zone_icon = ZONE_ICONS.get(zone_name, "mdi:select-group")
+        zone_type = coordinator.zone_type(zone_name)
+        zone_icon = ZONE_ICONS.get(zone_type, ZONE_ICONS.get(zone_name, "mdi:select-group"))
 
         entities.append(
             ClssZoneSensor(

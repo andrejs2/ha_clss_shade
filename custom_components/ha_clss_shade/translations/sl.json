@@ -24,11 +24,50 @@
     "step": {
       "init": {
         "title": "Nastavitve CLSS Shade",
+        "description": "Uporabniske cone:\n{custom_zones}",
         "data": {
           "radius": "Radij analize (metri)",
-          "include_neighbors": "Vkljuci sosednje ploscice (3x3 km)"
+          "include_neighbors": "Vkljuci sosednje ploscice (3x3 km)",
+          "zone_action": "Upravljanje con"
+        }
+      },
+      "add_zone": {
+        "title": "Dodaj cono",
+        "description": "Izberite ime, tip in obliko cone.\nOdmiki so v metrih od nastavljenega centra.\nUporabite CLSS pregledovalnik (clss.si) ali Google Maps za meritve.",
+        "data": {
+          "zone_name": "Ime cone",
+          "zone_type": "Tip cone",
+          "zone_shape": "Oblika cone"
+        }
+      },
+      "add_polygon": {
+        "title": "Dodaj poligon cono: {zone_name}",
+        "description": "Vnesite oglisca poligona kot odmike v metrih (vzhod, sever) od centra.\nFormat: `V,S; V,S; V,S; ...`\nPrimer: `-10,-5; 10,-5; 10,5; -10,5`\nVsaj 3 oglisca.",
+        "data": {
+          "vertices": "Oglisca (vzhod,sever pari, loceni s podpicji)"
+        }
+      },
+      "add_circle": {
+        "title": "Dodaj krozno cono: {zone_name}",
+        "description": "Dolocite krozno cono z odmikom od centra in radijem.\nPozitiven vzhod = desno, pozitiven sever = gor.",
+        "data": {
+          "offset_east": "Odmik vzhod (metri)",
+          "offset_north": "Odmik sever (metri)",
+          "zone_radius": "Radij (metri)"
+        }
+      },
+      "remove_zone": {
+        "title": "Odstrani cono",
+        "description": "Izberite uporabnisko cono za odstranitev.",
+        "data": {
+          "zone_to_remove": "Cona za odstranitev"
         }
       }
+    },
+    "error": {
+      "zone_name_exists": "Ime cone ze obstaja",
+      "zone_name_empty": "Ime cone ne sme biti prazno",
+      "invalid_vertices": "Neveljaven format oglisc. Uporabite: V,S; V,S; V,S (vsaj 3 oglisca)"
     }
   },
   "entity": {

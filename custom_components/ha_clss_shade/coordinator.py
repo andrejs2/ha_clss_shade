@@ -21,6 +21,7 @@ from .clss_data.slovenian_downloader import (
     TileNotFoundError,
 )
 from .const import (
+    CONF_CUSTOM_ZONES,
     CONF_INCLUDE_NEIGHBORS,
     CONF_RADIUS,
     DATA_DIR_NAME,
@@ -41,7 +42,7 @@ from .weather_bridge import (
     find_arso_entities,
     read_arso_weather,
 )
-from .zones import ZoneSet, auto_detect_zones
+from .zones import ZoneSet, auto_detect_zones, create_circular_zone, create_polygon_zone
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -120,6 +121,13 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
             return []
         return self._zones.names
 
+    def zone_type(self, name: str) -> str:
+        """Get zone type by name."""
+        if self._zones is None:
+            return "custom"
+        zone = self._zones.get(name)
+        return zone.zone_type if zone else "custom"
+
     async def async_setup(self) -> None:
         """Set up the site model — download LiDAR and rasterize."""
         # Try to load cached site model
@@ -168,10 +176,58 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
             self._zones = await self.hass.async_add_executor_job(
                 auto_detect_zones, self._site
             )
-            _LOGGER.info("Detected zones: %s", self._zones.names)
+            _LOGGER.info("Auto-detected zones: %s", self._zones.names)
+
+            # Load custom zones from options
+            custom_zone_configs = self.config_entry.options.get(CONF_CUSTOM_ZONES, [])
+            for zconf in custom_zone_configs:
+                try:
+                    zone = await self.hass.async_add_executor_job(
+                        self._create_custom_zone, zconf
+                    )
+                    self._zones.add(zone)
+                    _LOGGER.info(
+                        "Loaded custom zone '%s' (%s): %d cells",
+                        zone.name,
+                        zone.zone_type,
+                        zone.cell_count,
+                    )
+                except Exception:
+                    _LOGGER.exception(
+                        "Failed to create custom zone '%s'", zconf.get("name", "?")
+                    )
+
+            _LOGGER.info("All zones: %s", self._zones.names)
 
         # Discover ARSO weather entities
         self._arso_entities = find_arso_entities(self.hass)
+
+    def _create_custom_zone(self, zconf: dict):
+        """Create a custom zone from config dict (runs in executor)."""
+        shape = zconf.get("shape", "circle")
+        if shape == "polygon":
+            vertices = [tuple(v) for v in zconf["vertices"]]
+            # Detect coordinate type: if values look like lat/lng (>10) vs meter offsets
+            # Vertices from the map panel are [lat, lng], from config flow are [east, north]
+            coords_type = "offset"
+            if vertices and abs(vertices[0][0]) > 10:
+                coords_type = "latlng"
+            return create_polygon_zone(
+                self._site,
+                name=zconf["name"],
+                vertices=vertices,
+                zone_type=zconf.get("zone_type", "custom"),
+                coords_type=coords_type,
+            )
+        # Circle
+        return create_circular_zone(
+            self._site,
+            name=zconf["name"],
+            offset_e=zconf.get("offset_e", 0.0),
+            offset_n=zconf.get("offset_n", 0.0),
+            radius_m=zconf.get("radius", 10.0),
+            zone_type=zconf.get("zone_type", "custom"),
+        )
 
     async def _async_update_data(self) -> ClssShadeData:
         """Compute current shadow state."""

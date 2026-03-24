@@ -1,8 +1,11 @@
 {
   "domain": "ha_clss_shade",
   "name": "CLSS Shade",
-  "version": "0.1.0",
+  "codeowners": ["@andrejs2"],
+  "config_flow": true,
+  "dependencies": ["http", "frontend"],
   "documentation": "https://github.com/andrejs2/ha_clss_shade",
+  "iot_class": "calculated",
   "issue_tracker": "https://github.com/andrejs2/ha_clss_shade/issues",
   "requirements": [
     "numpy>=1.21",
@@ -11,8 +14,5 @@
     "pyproj>=3.0",
     "scipy>=1.9"
   ],
-  "codeowners": ["@andrejs2"],
-  "dependencies": [],
-  "iot_class": "calculated",
-  "config_flow": true
+  "version": "0.2.0"
 }

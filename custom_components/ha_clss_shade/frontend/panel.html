@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="sl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CLSS Shade — Zone Editor</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" crossorigin="" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+      background: #1c1c1c; color: #e0e0e0;
+    }
+    .toolbar {
+      display: flex; align-items: center; gap: 12px;
+      padding: 8px 16px; background: #1e1e2e; border-bottom: 1px solid #333;
+      min-height: 48px; flex-shrink: 0;
+    }
+    .toolbar h1 { font-size: 16px; font-weight: 600; margin-right: auto; }
+    .toolbar .status { font-size: 12px; color: #888; }
+    .toolbar button {
+      padding: 6px 14px; border: 1px solid #555; border-radius: 6px;
+      background: #2a2a3e; color: #e0e0e0; cursor: pointer; font-size: 13px;
+    }
+    .toolbar button:hover { background: #3a3a5e; }
+    .toolbar button.primary { background: #2563eb; border-color: #2563eb; color: #fff; }
+    .toolbar button.primary:hover { background: #1d4ed8; }
+    .toolbar button.danger { background: #dc2626; border-color: #dc2626; color: #fff; }
+    .toolbar button.danger:hover { background: #b91c1c; }
+    #map { flex: 1; z-index: 0; }
+
+    /* Zone list sidebar */
+    .sidebar {
+      position: absolute; top: 56px; right: 8px; z-index: 1000;
+      background: rgba(30, 30, 46, 0.95); border-radius: 8px;
+      padding: 12px; min-width: 220px; max-width: 300px;
+      max-height: calc(100vh - 72px); overflow-y: auto;
+      border: 1px solid #444; backdrop-filter: blur(8px);
+    }
+    .sidebar h2 { font-size: 14px; margin-bottom: 8px; color: #aaa; }
+    .zone-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 8px; border-radius: 4px; margin-bottom: 4px;
+      cursor: pointer; font-size: 13px;
+    }
+    .zone-item:hover { background: rgba(255,255,255,0.08); }
+    .zone-item .color-dot {
+      width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0;
+    }
+    .zone-item .name { flex: 1; }
+    .zone-item .type { color: #888; font-size: 11px; }
+    .zone-item .delete-btn {
+      opacity: 0; background: none; border: none; color: #f87171;
+      cursor: pointer; font-size: 14px; padding: 2px 4px;
+    }
+    .zone-item:hover .delete-btn { opacity: 1; }
+    .zone-item.auto .delete-btn { display: none; }
+
+    /* Modal dialog */
+    .modal-overlay {
+      display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.6); z-index: 2000;
+      justify-content: center; align-items: center;
+    }
+    .modal-overlay.active { display: flex; }
+    .modal {
+      background: #1e1e2e; border-radius: 12px; padding: 24px;
+      min-width: 320px; max-width: 420px; border: 1px solid #444;
+    }
+    .modal h3 { margin-bottom: 16px; font-size: 16px; }
+    .modal label { display: block; margin-bottom: 4px; font-size: 13px; color: #aaa; }
+    .modal input, .modal select {
+      width: 100%; padding: 8px 10px; margin-bottom: 12px;
+      background: #2a2a3e; border: 1px solid #555; border-radius: 6px;
+      color: #e0e0e0; font-size: 14px;
+    }
+    .modal .btn-row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
+    .modal button {
+      padding: 8px 16px; border: 1px solid #555; border-radius: 6px;
+      background: #2a2a3e; color: #e0e0e0; cursor: pointer; font-size: 13px;
+    }
+    .modal button.primary { background: #2563eb; border-color: #2563eb; color: #fff; }
+    .modal button.cancel { background: transparent; }
+
+    /* Help text */
+    .help-text {
+      position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
+      z-index: 1000; background: rgba(30, 30, 46, 0.9); padding: 8px 16px;
+      border-radius: 8px; font-size: 13px; color: #aaa;
+      pointer-events: none; text-align: center;
+    }
+
+    /* Leaflet overrides for dark theme */
+    .leaflet-draw-toolbar a { background-color: #2a2a3e !important; }
+    .leaflet-draw-actions a { background: #1e1e2e !important; color: #e0e0e0 !important; }
+    .leaflet-control-zoom a {
+      background: #2a2a3e !important; color: #e0e0e0 !important;
+      border-color: #555 !important;
+    }
+  </style>
+</head>
+<body>
+
+<div class="toolbar">
+  <h1>CLSS Shade — Zone Editor</h1>
+  <span class="status" id="status">Nalagam...</span>
+  <button class="primary" id="btn-save" disabled>Shrani</button>
+</div>
+
+<div id="map"></div>
+
+<div class="sidebar" id="sidebar">
+  <h2>Cone</h2>
+  <div id="zone-list"></div>
+</div>
+
+<div class="help-text" id="help-text">
+  Uporabi orodja na levi za risanje con. Klikni poligon za urejanje.
+</div>
+
+<!-- Name/type dialog -->
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal">
+    <h3>Nova cona</h3>
+    <label for="zone-name">Ime cone</label>
+    <input type="text" id="zone-name" placeholder="npr. borovnice, vrt, terasa..." />
+    <label for="zone-type">Tip cone</label>
+    <select id="zone-type">
+      <option value="custom">Custom</option>
+      <option value="garden">Vrt / Garden</option>
+      <option value="terrace">Terasa / Terrace</option>
+      <option value="pv">PV paneli / Solar</option>
+      <option value="parking">Parkirišče</option>
+      <option value="pool">Bazen / Pool</option>
+    </select>
+    <label for="zone-color">Barva</label>
+    <input type="color" id="zone-color" value="#2196F3" />
+    <div class="btn-row">
+      <button class="cancel" id="modal-cancel">Prekliči</button>
+      <button class="primary" id="modal-ok">Dodaj</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js" crossorigin=""></script>
+
+<script>
+(function() {
+  'use strict';
+
+  // ─── HA connection ───
+  function getHass() {
+    try {
+      if (window.parent && window.parent.document) {
+        const ha = window.parent.document.querySelector('home-assistant');
+        if (ha && ha.hass) return ha.hass;
+      }
+    } catch(e) {}
+    try {
+      const ha = document.querySelector('home-assistant');
+      if (ha && ha.hass) return ha.hass;
+    } catch(e) {}
+    return null;
+  }
+
+  async function callWS(type, data) {
+    const hass = getHass();
+    if (!hass || !hass.callWS) throw new Error('HA connection not available');
+    return await hass.callWS({ type, ...data });
+  }
+
+  // ─── State ───
+  let map, drawnItems, drawControl;
+  let config = null;      // { entries: [...] }
+  let activeEntry = null; // first entry
+  let customZones = [];   // local working copy
+  let dirty = false;
+  let pendingLayer = null;
+
+  const ZONE_COLORS = {
+    custom:  '#2196F3',
+    garden:  '#4CAF50',
+    terrace: '#FF9800',
+    pv:      '#FFC107',
+    parking: '#9E9E9E',
+    pool:    '#00BCD4',
+    roof:    '#F44336',
+    trees:   '#388E3C',
+    open:    '#8BC34A',
+  };
+
+  // ─── Init ───
+  async function init() {
+    setStatus('Povezujem z HA...');
+
+    // Retry getting HA connection (iframe may load before parent)
+    let retries = 0;
+    while (!getHass() && retries < 30) {
+      await new Promise(r => setTimeout(r, 300));
+      retries++;
+    }
+
+    if (!getHass()) {
+      setStatus('Napaka: ni HA povezave');
+      return;
+    }
+
+    try {
+      config = await callWS('ha_clss_shade/get_config', {});
+    } catch(e) {
+      setStatus('Napaka: ' + e.message);
+      return;
+    }
+
+    if (!config.entries || config.entries.length === 0) {
+      setStatus('Ni konfigurirane lokacije');
+      return;
+    }
+
+    activeEntry = config.entries[0];
+    customZones = JSON.parse(JSON.stringify(activeEntry.zones || []));
+
+    initMap();
+    loadZonesOnMap();
+    setStatus(activeEntry.title + ' — ' + customZones.length + ' con');
+    document.getElementById('btn-save').disabled = false;
+  }
+
+  function initMap() {
+    const lat = activeEntry.latitude;
+    const lng = activeEntry.longitude;
+
+    map = L.map('map', {
+      center: [lat, lng],
+      zoom: 19,
+      zoomControl: true,
+    });
+
+    // Satellite tiles (Esri — free, no API key)
+    L.tileLayer(
+      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      { maxZoom: 21, attribution: 'Esri' }
+    ).addTo(map);
+
+    // Street labels overlay
+    L.tileLayer(
+      'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}',
+      { maxZoom: 21, opacity: 0.5 }
+    ).addTo(map);
+
+    // Center marker
+    L.circleMarker([lat, lng], {
+      radius: 6, fillColor: '#ff0000', fillOpacity: 0.8,
+      color: '#fff', weight: 2,
+    }).addTo(map).bindTooltip('Center', { permanent: false });
+
+    // Radius circle
+    L.circle([lat, lng], {
+      radius: activeEntry.radius,
+      color: '#ff0000', weight: 1, fillOpacity: 0.05, dashArray: '5 5',
+    }).addTo(map);
+
+    // Drawn items layer
+    drawnItems = new L.FeatureGroup();
+    map.addLayer(drawnItems);
+
+    // Draw control — polygon + rectangle
+    drawControl = new L.Control.Draw({
+      position: 'topleft',
+      draw: {
+        polygon: {
+          allowIntersection: false,
+          showArea: true,
+          shapeOptions: { color: '#2196F3', weight: 2, fillOpacity: 0.3 },
+          metric: true,
+        },
+        rectangle: {
+          showArea: true,
+          shapeOptions: { color: '#2196F3', weight: 2, fillOpacity: 0.3 },
+          metric: true,
+        },
+        polyline: false,
+        circle: false,
+        circlemarker: false,
+        marker: false,
+      },
+      edit: {
+        featureGroup: drawnItems,
+        remove: true,
+        edit: true,
+      }
+    });
+    map.addControl(drawControl);
+
+    // Event handlers
+    map.on(L.Draw.Event.CREATED, onDrawCreated);
+    map.on(L.Draw.Event.EDITED, onDrawEdited);
+    map.on(L.Draw.Event.DELETED, onDrawDeleted);
+  }
+
+  // ─── Draw events ───
+  function onDrawCreated(e) {
+    pendingLayer = e.layer;
+    showModal();
+  }
+
+  function onDrawEdited(e) {
+    e.layers.eachLayer(function(layer) {
+      const zoneIdx = layer._clssZoneIdx;
+      if (zoneIdx !== undefined && customZones[zoneIdx]) {
+        const coords = layer.getLatLngs()[0].map(ll => [ll.lat, ll.lng]);
+        customZones[zoneIdx].vertices = coords;
+      }
+    });
+    markDirty();
+    refreshZoneList();
+  }
+
+  function onDrawDeleted(e) {
+    const toRemove = [];
+    e.layers.eachLayer(function(layer) {
+      if (layer._clssZoneIdx !== undefined) {
+        toRemove.push(layer._clssZoneIdx);
+      }
+    });
+    // Remove in reverse order to keep indices valid
+    toRemove.sort((a, b) => b - a);
+    for (const idx of toRemove) {
+      customZones.splice(idx, 1);
+    }
+    markDirty();
+    refreshZoneList();
+  }
+
+  // ─── Modal ───
+  function showModal() {
+    document.getElementById('zone-name').value = '';
+    document.getElementById('zone-type').value = 'custom';
+    document.getElementById('zone-color').value = '#2196F3';
+    document.getElementById('modal-overlay').classList.add('active');
+    setTimeout(() => document.getElementById('zone-name').focus(), 100);
+  }
+
+  function hideModal() {
+    document.getElementById('modal-overlay').classList.remove('active');
+    if (pendingLayer) {
+      pendingLayer = null;
+    }
+  }
+
+  document.getElementById('modal-cancel').addEventListener('click', hideModal);
+
+  document.getElementById('modal-ok').addEventListener('click', function() {
+    const name = document.getElementById('zone-name').value.trim().toLowerCase().replace(/\s+/g, '_');
+    const zoneType = document.getElementById('zone-type').value;
+    const color = document.getElementById('zone-color').value;
+
+    if (!name) {
+      document.getElementById('zone-name').style.borderColor = '#f44336';
+      return;
+    }
+
+    // Check duplicate names
+    const existing = customZones.map(z => z.name);
+    const autoNames = ['roof', 'garden', 'trees', 'open'];
+    if (existing.includes(name) || autoNames.includes(name)) {
+      alert('Ime cone "' + name + '" že obstaja!');
+      return;
+    }
+
+    // Get vertices from drawn layer
+    const coords = pendingLayer.getLatLngs()[0].map(ll => [ll.lat, ll.lng]);
+
+    const zone = {
+      name: name,
+      zone_type: zoneType,
+      shape: 'polygon',
+      vertices: coords,
+      color: color,
+    };
+
+    customZones.push(zone);
+
+    // Style and add to map
+    pendingLayer.setStyle({
+      color: color,
+      fillColor: color,
+      fillOpacity: 0.3,
+      weight: 2,
+    });
+    pendingLayer._clssZoneIdx = customZones.length - 1;
+    pendingLayer.bindTooltip(name, { permanent: true, direction: 'center', className: 'zone-label' });
+    drawnItems.addLayer(pendingLayer);
+    pendingLayer = null;
+
+    hideModal();
+    markDirty();
+    refreshZoneList();
+  });
+
+  // Enter key in modal
+  document.getElementById('zone-name').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') document.getElementById('modal-ok').click();
+  });
+
+  // ─── Load existing zones ───
+  function loadZonesOnMap() {
+    drawnItems.clearLayers();
+
+    customZones.forEach(function(zone, idx) {
+      if (zone.shape !== 'polygon' || !zone.vertices || zone.vertices.length < 3) return;
+
+      const latlngs = zone.vertices.map(function(v) {
+        return L.latLng(v[0], v[1]);
+      });
+
+      const color = zone.color || ZONE_COLORS[zone.zone_type] || '#2196F3';
+      const layer = L.polygon(latlngs, {
+        color: color,
+        fillColor: color,
+        fillOpacity: 0.3,
+        weight: 2,
+      });
+      layer._clssZoneIdx = idx;
+      layer.bindTooltip(zone.name, { permanent: true, direction: 'center' });
+      drawnItems.addLayer(layer);
+    });
+
+    refreshZoneList();
+  }
+
+  // ─── Zone list sidebar ───
+  function refreshZoneList() {
+    const list = document.getElementById('zone-list');
+    list.innerHTML = '';
+
+    if (customZones.length === 0) {
+      list.innerHTML = '<div style="color:#666;font-size:12px;padding:4px">Ni uporabniških con. Nariši poligon na karti.</div>';
+      return;
+    }
+
+    customZones.forEach(function(zone, idx) {
+      const div = document.createElement('div');
+      div.className = 'zone-item';
+
+      const color = zone.color || ZONE_COLORS[zone.zone_type] || '#2196F3';
+      const vCount = (zone.vertices || []).length;
+
+      div.innerHTML =
+        '<span class="color-dot" style="background:' + color + '"></span>' +
+        '<span class="name">' + zone.name + '</span>' +
+        '<span class="type">' + zone.zone_type + ' (' + vCount + ')</span>' +
+        '<button class="delete-btn" title="Odstrani">&times;</button>';
+
+      // Click to zoom
+      div.addEventListener('click', function(e) {
+        if (e.target.classList.contains('delete-btn')) return;
+        zoomToZone(idx);
+      });
+
+      // Delete button
+      div.querySelector('.delete-btn').addEventListener('click', function() {
+        deleteZone(idx);
+      });
+
+      list.appendChild(div);
+    });
+  }
+
+  function zoomToZone(idx) {
+    const zone = customZones[idx];
+    if (!zone || !zone.vertices || zone.vertices.length < 3) return;
+    const bounds = L.latLngBounds(zone.vertices.map(v => L.latLng(v[0], v[1])));
+    map.fitBounds(bounds, { padding: [50, 50] });
+  }
+
+  function deleteZone(idx) {
+    // Remove layer from map
+    drawnItems.eachLayer(function(layer) {
+      if (layer._clssZoneIdx === idx) {
+        drawnItems.removeLayer(layer);
+      }
+    });
+
+    customZones.splice(idx, 1);
+
+    // Re-index remaining layers
+    drawnItems.eachLayer(function(layer) {
+      if (layer._clssZoneIdx !== undefined && layer._clssZoneIdx > idx) {
+        layer._clssZoneIdx--;
+      }
+    });
+
+    markDirty();
+    refreshZoneList();
+  }
+
+  // ─── Save ───
+  document.getElementById('btn-save').addEventListener('click', async function() {
+    const btn = this;
+    btn.disabled = true;
+    btn.textContent = 'Shranjujem...';
+
+    try {
+      // Sync layer positions back to zones (in case of edits)
+      drawnItems.eachLayer(function(layer) {
+        const idx = layer._clssZoneIdx;
+        if (idx !== undefined && customZones[idx] && layer.getLatLngs) {
+          const coords = layer.getLatLngs()[0].map(ll => [ll.lat, ll.lng]);
+          customZones[idx].vertices = coords;
+        }
+      });
+
+      await callWS('ha_clss_shade/save_zones', {
+        entry_id: activeEntry.entry_id,
+        zones: customZones,
+      });
+
+      dirty = false;
+      btn.textContent = 'Shranjeno!';
+      setStatus(activeEntry.title + ' — ' + customZones.length + ' con (shranjeno)');
+      setTimeout(function() { btn.textContent = 'Shrani'; btn.disabled = false; }, 1500);
+    } catch(e) {
+      btn.textContent = 'Napaka!';
+      setStatus('Napaka pri shranjevanju: ' + e.message);
+      setTimeout(function() { btn.textContent = 'Shrani'; btn.disabled = false; }, 2000);
+    }
+  });
+
+  // ─── Helpers ───
+  function markDirty() {
+    dirty = true;
+    setStatus(activeEntry.title + ' — ' + customZones.length + ' con (neshranjeno)');
+  }
+
+  function setStatus(text) {
+    document.getElementById('status').textContent = text;
+  }
+
+  // Warn on leaving with unsaved changes
+  window.addEventListener('beforeunload', function(e) {
+    if (dirty) {
+      e.preventDefault();
+      e.returnValue = '';
+    }
+  });
+
+  // ─── Start ───
+  init();
+
+})();
+</script>
+</body>
+</html>

@@ -1,6 +1,5 @@
 {
   "name": "CLSS Shade",
   "homeassistant": "2024.4.0",
-  "render_readme": true,
-  "country": "SI"
+  "render_readme": true
 }
