@@ -2,6 +2,12 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .coordinator import ClssShadeCoordinator
+
 DOMAIN = "ha_clss_shade"
 
 # CLSS LiDAR classification codes (ASPRS)
@@ -36,6 +42,22 @@ ARSO_LIDAR_BASE_URL = "http://gis.arso.gov.si/lidar"
 ARSO_TILE_SIZE_M = 1000  # 1 km tiles
 
 # Default configuration
-DEFAULT_RADIUS_M = 500
+DEFAULT_RADIUS_M = 200
 DEFAULT_UPDATE_INTERVAL_MIN = 5
-DEFAULT_CELL_RESOLUTION_M = 1.0
+
+# Config keys
+CONF_LATITUDE = "latitude"
+CONF_LONGITUDE = "longitude"
+CONF_RADIUS = "radius"
+CONF_NAME = "name"
+CONF_INCLUDE_NEIGHBORS = "include_neighbors"
+
+# Data storage
+DATA_DIR_NAME = "clss_shade"
+
+
+@dataclass
+class ClssShadeRuntimeData:
+    """Runtime data for a CLSS Shade config entry."""
+
+    coordinator: ClssShadeCoordinator

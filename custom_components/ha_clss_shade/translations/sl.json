@@ -3,21 +3,51 @@
     "step": {
       "user": {
         "title": "Nastavitev CLSS Shade",
-        "description": "Nastavite lokacijo za analizo sencenja na podlagi LiDAR podatkov.",
+        "description": "Nastavite lokacijo za analizo sencenja na podlagi LiDAR podatkov. Ob prvi nastavitvi se prenese ~30-50 MB LiDAR podatkov.",
         "data": {
+          "name": "Ime lokacije",
           "latitude": "Zemljepisna sirina",
           "longitude": "Zemljepisna dolzina",
           "radius": "Radij analize (metri)",
-          "name": "Ime lokacije"
+          "include_neighbors": "Vkljuci sosednje ploscice (3x3 km)"
         }
       }
     },
     "error": {
-      "cannot_connect": "Prenos LiDAR podatkov ni uspel",
       "invalid_location": "Lokacija je izven Slovenije"
     },
     "abort": {
       "already_configured": "Ta lokacija je ze nastavljena"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Nastavitve CLSS Shade",
+        "data": {
+          "radius": "Radij analize (metri)",
+          "include_neighbors": "Vkljuci sosednje ploscice (3x3 km)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "shade_percent": {
+        "name": "Senca"
+      },
+      "sun_percent": {
+        "name": "Sonce"
+      },
+      "sun_elevation": {
+        "name": "Visina sonca"
+      },
+      "sun_azimuth": {
+        "name": "Azimut sonca"
+      },
+      "is_day": {
+        "name": "Dnevna svetloba"
+      }
     }
   }
 }

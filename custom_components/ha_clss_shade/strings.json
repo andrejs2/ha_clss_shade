@@ -3,21 +3,51 @@
     "step": {
       "user": {
         "title": "CLSS Shade Setup",
-        "description": "Configure your location for LiDAR-based shade analysis.",
+        "description": "Configure your location for LiDAR-based shade analysis. The integration will download ~30-50 MB of LiDAR data on first setup.",
         "data": {
+          "name": "Location name",
           "latitude": "Latitude",
           "longitude": "Longitude",
           "radius": "Analysis radius (meters)",
-          "name": "Location name"
+          "include_neighbors": "Include neighboring tiles (3x3 km)"
         }
       }
     },
     "error": {
-      "cannot_connect": "Failed to download LiDAR data",
       "invalid_location": "Location is outside Slovenia"
     },
     "abort": {
       "already_configured": "This location is already configured"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "CLSS Shade Options",
+        "data": {
+          "radius": "Analysis radius (meters)",
+          "include_neighbors": "Include neighboring tiles (3x3 km)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "shade_percent": {
+        "name": "Shade"
+      },
+      "sun_percent": {
+        "name": "Sun"
+      },
+      "sun_elevation": {
+        "name": "Sun elevation"
+      },
+      "sun_azimuth": {
+        "name": "Sun azimuth"
+      },
+      "is_day": {
+        "name": "Daylight"
+      }
     }
   }
 }
