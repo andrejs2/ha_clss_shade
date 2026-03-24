@@ -15,24 +15,24 @@
 
 [<img src="https://em-content.zobj.net/thumbs/240/microsoft/319/rocket_1f680.png" alt="Install" width="30"/> ![Install via HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=andrejs2&repository=ha_clss_shade&category=integration)
 
-# CLSS Shade — Analiza sencenja na podlagi LiDAR podatkov za Home Assistant
+# CLSS Shade — Analiza senčenja na podlagi LiDAR podatkov za Home Assistant
 
 ## Pregled
 
-**CLSS Shade** je Home Assistant integracija, ki uporablja podatke **Ciklicnega Laserskega Skeniranja Slovenije (CLSS)** za natancno analizo sencenja vasega doma in okolice. Na podlagi visoko-resolucijskega 3D oblaka tock (10 tock/m², resolucija 0.5 m) integracija izracuna, kateri deli vasega doma, vrta in strehe so v danem trenutku na soncu in kateri v senci.
+**CLSS Shade** je Home Assistant integracija, ki uporablja podatke **Cikličnega laserskega skeniranja Slovenije (CLSS)** za natančno analizo senčenja vašega doma in okolice. Na podlagi visoko-resolucijskega 3D oblaka točk (10 tock/m², resolucija 0.5 m) integracija izračuna, kateri deli vasega doma, vrta in strehe so v danem trenutku na soncu in kateri v senci.
 
 V kombinaciji z vremenskimi podatki iz integracije [ARSO Weather (slovenian_weather_integration)](https://github.com/andrejs2/slovenian_weather_integration) ponuja:
 
-- **Natancno analizo sencenja** na podlagi dejanskega 3D modela okolice (stavbe, drevesa, teren)
-- **Oceno PV proizvodnje** — koliko elektricne energije vas soncni sistem dejansko proizvaja glede na sencenje strehe in izmerjeno soncno sevanje
-- **Pametno zalivanje** — koliko vode potrebuje posamezna cona vrta glede na osoncenje, evapotranspiracijo in napoved padavin
-- **Avtomatizacijo sencil in rolet** — katera okna so osoncena in kdaj bo sonce prislo/odslona
+- **Natančno analizo senčenja** na podlagi dejanskega 3D modela okolice (stavbe, drevesa, teren)
+- **Oceno PV proizvodnje** — koliko električne energije vaš sončni sistem dejansko proizvaja glede na senčenje strehe in izmerjeno sončno sevanje
+- **Pametno zalivanje** — koliko vode potrebuje posamezna cona vrta glede na osončenje, evapotranspiracijo in napoved padavin
+- **Avtomatizacijo senčil in rolet** — katera okna so osončena in kdaj bo sonce vzšlo ali zašlo
 
 ---
 
 ## Kako deluje
 
-Integracija ob prvi nastavitvi prenese LiDAR podatke iz streznika ARSO (Agencija RS za okolje) — en LiDAR tile velikosti 1×1 km (~30-50 MB), ki pokriva vaso lokacijo. Iz oblaka tock zgradi digitalni model povrsja (DSM) in terena (DTM), nato pa vsakih 5 minut izvede izracun sencenja na podlagi trenutnega polozaja sonca.
+Integracija ob prvi nastavitvi prenese LiDAR podatke iz strežnika Portala Prostor (Geodetska uprava RS) — en LiDAR tile velikosti 1×1 km (~30-50 MB), ki pokriva izbrano lokacijo. Iz oblaka točk zgradi digitalni model površja (DSM) in terena (DTM), nato pa vsakih 5 minut izvede izračun senčenja na podlagi trenutnega položaja sonca.
 
 ### Princip delovanja
 
@@ -40,14 +40,14 @@ Integracija ob prvi nastavitvi prenese LiDAR podatke iz streznika ARSO (Agencija
 1. Prenos LiDAR podatkov (enkratno)
    ARSO streznik → LAZ datoteka → DSM/DTM grid (800×800 celic pri 200m radiju)
 
-2. Izracun sencenja (vsakih 5 minut)
-   Polozaj sonca + DSM grid → Ray-marching → Sencna mapa
+2. Izračun senčenja (vsakih 5 minut)
+   Polozaj sonca + DSM grid → Ray-marching → Senčna mapa
 
 3. Analiza po conah (avtomatska detekcija)
    LiDAR klasifikacija → Streha / Vrt / Drevesa / Odprto
 
 4. Kombinacija z vremenskimi podatki (opcijsko)
-   Senca mapa + ARSO soncno sevanje → PV ocena
+   Senca mapa + ARSO sončno sevanje → PV ocena
    Senca mapa + ARSO agrometeo → Zalivanje
 ```
 
