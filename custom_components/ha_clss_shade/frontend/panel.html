@@ -101,22 +101,15 @@
       border-color: #555 !important;
     }
 
-    /* Vertex markers: bright red dots with glow */
-    .leaflet-div-icon.vertex-icon {
-      background: #ff2222 !important; border: 2.5px solid #fff !important;
+    /* ALL vertex markers: bright red dots — override Leaflet defaults */
+    .leaflet-div-icon {
+      background: #ff2222 !important;
+      border: 2.5px solid #fff !important;
       border-radius: 50% !important;
-      box-shadow: 0 0 8px 2px rgba(255,34,34,0.8), 0 0 3px rgba(0,0,0,0.6);
-    }
-    .leaflet-div-icon.vertex-icon-mid {
-      background: rgba(255,100,100,0.7) !important; border: 2px solid rgba(255,255,255,0.8) !important;
-      border-radius: 50% !important;
-      box-shadow: 0 0 6px 1px rgba(255,100,100,0.6);
-    }
-    /* Override default editing icons too */
-    .leaflet-editing-icon {
-      background: #ff2222 !important; border: 2.5px solid #fff !important;
-      border-radius: 50% !important; width: 16px !important; height: 16px !important;
-      margin-left: -8px !important; margin-top: -8px !important;
+      width: 16px !important;
+      height: 16px !important;
+      margin-left: -8px !important;
+      margin-top: -8px !important;
       box-shadow: 0 0 8px 2px rgba(255,34,34,0.8), 0 0 3px rgba(0,0,0,0.6);
     }
   </style>
