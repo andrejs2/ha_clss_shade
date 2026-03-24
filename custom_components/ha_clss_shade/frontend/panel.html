@@ -100,6 +100,23 @@
       background: #2a2a3e !important; color: #e0e0e0 !important;
       border-color: #555 !important;
     }
+
+    /* Vertex markers: small red dots instead of big squares */
+    .leaflet-div-icon.vertex-icon {
+      background: #ef4444 !important; border: 2px solid #fff !important;
+      border-radius: 50% !important; box-shadow: 0 0 4px rgba(0,0,0,0.5);
+    }
+    .leaflet-div-icon.vertex-icon-mid {
+      background: rgba(239,68,68,0.5) !important; border: 1.5px solid rgba(255,255,255,0.7) !important;
+      border-radius: 50% !important;
+    }
+    /* Override default editing icons too */
+    .leaflet-editing-icon {
+      background: #ef4444 !important; border: 2px solid #fff !important;
+      border-radius: 50% !important; width: 10px !important; height: 10px !important;
+      margin-left: -5px !important; margin-top: -5px !important;
+      box-shadow: 0 0 4px rgba(0,0,0,0.5);
+    }
   </style>
 </head>
 <body>
@@ -269,6 +286,24 @@
     drawnItems = new L.FeatureGroup();
     map.addLayer(drawnItems);
 
+    // Custom vertex icons — small red dots
+    var vertexIcon = new L.DivIcon({
+      className: 'vertex-icon',
+      iconSize: [10, 10],
+      iconAnchor: [5, 5],
+    });
+    var vertexIconMid = new L.DivIcon({
+      className: 'vertex-icon-mid',
+      iconSize: [8, 8],
+      iconAnchor: [4, 4],
+    });
+
+    // Override default edit vertex icons globally
+    if (L.Edit && L.Edit.PolyVerticesEdit) {
+      L.Edit.PolyVerticesEdit.prototype.options.icon = vertexIcon;
+      L.Edit.PolyVerticesEdit.prototype.options.touchIcon = vertexIcon;
+    }
+
     // Draw control — polygon + rectangle
     drawControl = new L.Control.Draw({
       position: 'topleft',
@@ -278,6 +313,8 @@
           showArea: true,
           shapeOptions: { color: '#2196F3', weight: 2, fillOpacity: 0.3 },
           metric: true,
+          icon: vertexIcon,
+          touchIcon: vertexIcon,
         },
         rectangle: {
           showArea: true,
@@ -293,6 +330,7 @@
         featureGroup: drawnItems,
         remove: true,
         edit: true,
+        poly: { icon: vertexIcon, touchIcon: vertexIcon },
       }
     });
     map.addControl(drawControl);
