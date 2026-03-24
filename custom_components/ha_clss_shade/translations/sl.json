@@ -47,6 +47,12 @@
       },
       "is_day": {
         "name": "Dnevna svetloba"
+      },
+      "pv_power_estimate": {
+        "name": "Ocena PV moci"
+      },
+      "irrigation_need": {
+        "name": "Potreba po zalivanju"
       }
     }
   }
