@@ -101,21 +101,23 @@
       border-color: #555 !important;
     }
 
-    /* Vertex markers: small red dots instead of big squares */
+    /* Vertex markers: bright red dots with glow */
     .leaflet-div-icon.vertex-icon {
-      background: #ef4444 !important; border: 2px solid #fff !important;
-      border-radius: 50% !important; box-shadow: 0 0 4px rgba(0,0,0,0.5);
+      background: #ff2222 !important; border: 2.5px solid #fff !important;
+      border-radius: 50% !important;
+      box-shadow: 0 0 8px 2px rgba(255,34,34,0.8), 0 0 3px rgba(0,0,0,0.6);
     }
     .leaflet-div-icon.vertex-icon-mid {
-      background: rgba(239,68,68,0.5) !important; border: 1.5px solid rgba(255,255,255,0.7) !important;
+      background: rgba(255,100,100,0.7) !important; border: 2px solid rgba(255,255,255,0.8) !important;
       border-radius: 50% !important;
+      box-shadow: 0 0 6px 1px rgba(255,100,100,0.6);
     }
     /* Override default editing icons too */
     .leaflet-editing-icon {
-      background: #ef4444 !important; border: 2px solid #fff !important;
-      border-radius: 50% !important; width: 10px !important; height: 10px !important;
-      margin-left: -5px !important; margin-top: -5px !important;
-      box-shadow: 0 0 4px rgba(0,0,0,0.5);
+      background: #ff2222 !important; border: 2.5px solid #fff !important;
+      border-radius: 50% !important; width: 16px !important; height: 16px !important;
+      margin-left: -8px !important; margin-top: -8px !important;
+      box-shadow: 0 0 8px 2px rgba(255,34,34,0.8), 0 0 3px rgba(0,0,0,0.6);
     }
   </style>
 </head>
@@ -286,16 +288,16 @@
     drawnItems = new L.FeatureGroup();
     map.addLayer(drawnItems);
 
-    // Custom vertex icons — small red dots
+    // Custom vertex icons — bright red dots with glow
     var vertexIcon = new L.DivIcon({
       className: 'vertex-icon',
-      iconSize: [10, 10],
-      iconAnchor: [5, 5],
+      iconSize: [16, 16],
+      iconAnchor: [8, 8],
     });
     var vertexIconMid = new L.DivIcon({
       className: 'vertex-icon-mid',
-      iconSize: [8, 8],
-      iconAnchor: [4, 4],
+      iconSize: [12, 12],
+      iconAnchor: [6, 6],
     });
 
     // Override default edit vertex icons globally
