@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+
+# Data files (large LiDAR files)
+data/*.laz
+data/*.las
+data/*.tif
+data/*.asc
+data/*.npz
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.local

@@ -1,0 +1,23 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "CLSS Shade Setup",
+        "description": "Configure your location for LiDAR-based shade analysis.",
+        "data": {
+          "latitude": "Latitude",
+          "longitude": "Longitude",
+          "radius": "Analysis radius (meters)",
+          "name": "Location name"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to download LiDAR data",
+      "invalid_location": "Location is outside Slovenia"
+    },
+    "abort": {
+      "already_configured": "This location is already configured"
+    }
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Nastavitev CLSS Shade",
+        "description": "Nastavite lokacijo za analizo sencenja na podlagi LiDAR podatkov.",
+        "data": {
+          "latitude": "Zemljepisna sirina",
+          "longitude": "Zemljepisna dolzina",
+          "radius": "Radij analize (metri)",
+          "name": "Ime lokacije"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Prenos LiDAR podatkov ni uspel",
+      "invalid_location": "Lokacija je izven Slovenije"
+    },
+    "abort": {
+      "already_configured": "Ta lokacija je ze nastavljena"
+    }
+  }
+}
