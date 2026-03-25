@@ -93,13 +93,31 @@
       pointer-events: none; text-align: center;
     }
 
-    /* Leaflet overrides for dark theme */
-    .leaflet-draw-toolbar a { background-color: #2a2a3e !important; }
-    .leaflet-draw-actions a { background: #1e1e2e !important; color: #e0e0e0 !important; }
-    .leaflet-control-zoom a {
-      background: #2a2a3e !important; color: #e0e0e0 !important;
-      border-color: #555 !important;
+    /* Leaflet overrides for dark theme — toolbar buttons */
+    .leaflet-draw-toolbar a {
+      background-color: #3b3b5c !important;
+      border-color: #666 !important;
     }
+    .leaflet-draw-toolbar a:hover {
+      background-color: #4c4c7a !important;
+    }
+    /* Make draw toolbar icons white/bright instead of dark */
+    .leaflet-draw-toolbar .leaflet-draw-draw-polygon,
+    .leaflet-draw-toolbar .leaflet-draw-draw-rectangle,
+    .leaflet-draw-toolbar .leaflet-draw-edit-edit,
+    .leaflet-draw-toolbar .leaflet-draw-edit-remove {
+      filter: invert(1) brightness(1.8) !important;
+    }
+    .leaflet-draw-actions a {
+      background: #3b3b5c !important; color: #fff !important;
+      border-color: #666 !important;
+    }
+    .leaflet-draw-actions a:hover { background: #4c4c7a !important; }
+    .leaflet-control-zoom a {
+      background: #3b3b5c !important; color: #fff !important;
+      border-color: #666 !important;
+    }
+    .leaflet-control-zoom a:hover { background: #4c4c7a !important; }
 
     /* ALL vertex markers: bright red dots — nuclear override v3 */
     .leaflet-div-icon,
@@ -123,7 +141,7 @@
 <body>
 
 <div class="toolbar">
-  <h1>CLSS Shade — Zone Editor <small style="color:#666;font-size:11px">v7</small></h1>
+  <h1>CLSS Shade — Zone Editor <small style="color:#666;font-size:11px">v8</small></h1>
   <span class="status" id="status">Nalagam...</span>
   <button class="primary" id="btn-save" disabled>Shrani</button>
 </div>
