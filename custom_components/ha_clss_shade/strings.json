@@ -29,6 +29,7 @@
           "radius": "Analysis radius (meters)",
           "include_neighbors": "Include neighboring tiles (3x3 km)",
           "pv_zones_config": "PV zones — zone:Wp pairs (e.g. pv_upper:5000,pv_lower:6000)",
+          "pv_real_entity": "Real PV power entity (e.g. sensor.solaredge_current_power)",
           "zone_action": "Zone management"
         }
       },
@@ -93,6 +94,12 @@
       },
       "pv_power_estimate": {
         "name": "PV power estimate"
+      },
+      "pv_power_real": {
+        "name": "PV power real"
+      },
+      "pv_performance_factor": {
+        "name": "PV performance factor"
       },
       "irrigation_need": {
         "name": "Irrigation need"

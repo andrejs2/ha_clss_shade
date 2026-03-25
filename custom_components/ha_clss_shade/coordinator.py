@@ -23,6 +23,7 @@ from .clss_data.slovenian_downloader import (
 from .const import (
     CONF_CUSTOM_ZONES,
     CONF_INCLUDE_NEIGHBORS,
+    CONF_PV_REAL_ENTITY,
     CONF_PV_ZONES_CONFIG,
     CONF_RADIUS,
     DATA_DIR_NAME,
@@ -74,6 +75,8 @@ class ClssShadeData:
     zones: dict[str, ZoneData] = field(default_factory=dict)
     weather: ArsoWeatherData | None = None
     pv_power_estimate: float | None = None
+    pv_power_real: float | None = None
+    pv_performance_factor: float | None = None
     irrigation_need: float | None = None
 
 
@@ -98,6 +101,7 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
         self._pv_zones_config = self._parse_pv_config(
             entry.options.get(CONF_PV_ZONES_CONFIG, "")
         )
+        self._pv_real_entity: str = entry.options.get(CONF_PV_REAL_ENTITY, "")
 
         # Data directory for this entry
         self._data_dir = Path(hass.config.path(DATA_DIR_NAME, entry.entry_id))
@@ -364,6 +368,19 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
                         area_m2=garden.area_m2,
                     )
 
+            # Read real PV power and calculate performance factor
+            pv_real = None
+            pv_perf = None
+            if self._pv_real_entity:
+                state = self.hass.states.get(self._pv_real_entity)
+                if state and state.state not in ("unknown", "unavailable"):
+                    try:
+                        pv_real = round(float(state.state), 1)
+                    except (ValueError, TypeError):
+                        pass
+                if pv_real is not None and pv_estimate and pv_estimate > 50:
+                    pv_perf = round(pv_real / pv_estimate, 3)
+
             return ClssShadeData(
                 shadow=result,
                 sun=sun,
@@ -377,6 +394,8 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
                 zones=zone_data,
                 weather=weather,
                 pv_power_estimate=pv_estimate,
+                pv_power_real=pv_real,
+                pv_performance_factor=pv_perf,
                 irrigation_need=irrigation,
             )
 

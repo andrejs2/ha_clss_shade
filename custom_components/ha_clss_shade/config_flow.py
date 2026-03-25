@@ -12,6 +12,7 @@ from homeassistant.const import CONF_LATITUDE, CONF_LONGITUDE, CONF_NAME
 from .const import (
     CONF_CUSTOM_ZONES,
     CONF_INCLUDE_NEIGHBORS,
+    CONF_PV_REAL_ENTITY,
     CONF_PV_ZONES_CONFIG,
     CONF_RADIUS,
     DEFAULT_RADIUS_M,
@@ -131,6 +132,7 @@ class ClssShadeOptionsFlow(config_entries.OptionsFlow):
                 CONF_RADIUS: user_input.get(CONF_RADIUS, DEFAULT_RADIUS_M),
                 CONF_INCLUDE_NEIGHBORS: user_input.get(CONF_INCLUDE_NEIGHBORS, False),
                 CONF_PV_ZONES_CONFIG: user_input.get(CONF_PV_ZONES_CONFIG, ""),
+                CONF_PV_REAL_ENTITY: user_input.get(CONF_PV_REAL_ENTITY, ""),
                 CONF_CUSTOM_ZONES: list(
                     self._config_entry.options.get(CONF_CUSTOM_ZONES, [])
                 ),
@@ -189,6 +191,10 @@ class ClssShadeOptionsFlow(config_entries.OptionsFlow):
                     vol.Optional(
                         CONF_PV_ZONES_CONFIG,
                         default=current.get(CONF_PV_ZONES_CONFIG, ""),
+                    ): str,
+                    vol.Optional(
+                        CONF_PV_REAL_ENTITY,
+                        default=current.get(CONF_PV_REAL_ENTITY, ""),
                     ): str,
                     vol.Required("zone_action", default="done"): vol.In(zone_actions),
                 }

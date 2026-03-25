@@ -29,6 +29,7 @@
           "radius": "Radij analize (metri)",
           "include_neighbors": "Vkljuci sosednje ploscice (3x3 km)",
           "pv_zones_config": "PV cone — cona:Wp pari (npr. pv_visja:5000,pv_nizja:6000)",
+          "pv_real_entity": "Realna PV moc entiteta (npr. sensor.solaredge_current_power)",
           "zone_action": "Upravljanje con"
         }
       },
@@ -93,6 +94,12 @@
       },
       "pv_power_estimate": {
         "name": "Ocena PV moci"
+      },
+      "pv_power_real": {
+        "name": "Realna PV moc"
+      },
+      "pv_performance_factor": {
+        "name": "PV faktor ucinkovitosti"
       },
       "irrigation_need": {
         "name": "Potreba po zalivanju"

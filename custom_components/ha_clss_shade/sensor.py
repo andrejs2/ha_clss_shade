@@ -78,6 +78,20 @@ GLOBAL_SENSORS: tuple[SensorEntityDescription, ...] = (
         icon="mdi:solar-power",
     ),
     SensorEntityDescription(
+        key="pv_power_real",
+        translation_key="pv_power_real",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:solar-panel",
+    ),
+    SensorEntityDescription(
+        key="pv_performance_factor",
+        translation_key="pv_performance_factor",
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:chart-bell-curve",
+    ),
+    SensorEntityDescription(
         key="irrigation_need",
         translation_key="irrigation_need",
         native_unit_of_measurement=UnitOfVolume.LITERS,
@@ -225,6 +239,22 @@ class ClssShadeSensor(CoordinatorEntity[ClssShadeCoordinator], SensorEntity):
                     attrs[f"{zn}_sun_pct"] = zd.sun_percent
                     attrs[f"{zn}_wp"] = cap_val
             attrs["total_capacity_wp"] = total_wp
+            return attrs
+
+        if key == "pv_performance_factor":
+            attrs = {
+                "pv_real_w": data.pv_power_real,
+                "pv_estimate_w": data.pv_power_estimate,
+                "factor": data.pv_performance_factor,
+            }
+            if data.pv_performance_factor is not None:
+                pf = data.pv_performance_factor
+                if pf < 0.7:
+                    attrs["status"] = "nizka_ucinkovitost"
+                elif pf > 1.3:
+                    attrs["status"] = "ocena_prenizka"
+                else:
+                    attrs["status"] = "normalno"
             return attrs
 
         if key == "irrigation_need" and data.weather:
