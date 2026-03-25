@@ -123,7 +123,7 @@
 <body>
 
 <div class="toolbar">
-  <h1>CLSS Shade — Zone Editor <small style="color:#666;font-size:11px">v4</small></h1>
+  <h1>CLSS Shade — Zone Editor <small style="color:#666;font-size:11px">v5</small></h1>
   <span class="status" id="status">Nalagam...</span>
   <button class="primary" id="btn-save" disabled>Shrani</button>
 </div>
@@ -255,21 +255,47 @@
 
     map = L.map('map', {
       center: [lat, lng],
-      zoom: 19,
+      zoom: 20,
       zoomControl: true,
+      maxZoom: 23,
     });
 
-    // Satellite tiles (Esri — free, no API key)
-    L.tileLayer(
+    // Tile layers — multiple sources for best coverage
+    var googleSat = L.tileLayer(
+      'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
+      { maxZoom: 22, maxNativeZoom: 21, attribution: 'Google' }
+    );
+    var googleHybrid = L.tileLayer(
+      'https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
+      { maxZoom: 22, maxNativeZoom: 21, attribution: 'Google' }
+    );
+    var esriSat = L.tileLayer(
       'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-      { maxZoom: 21, attribution: 'Esri' }
-    ).addTo(map);
+      { maxZoom: 22, maxNativeZoom: 19, attribution: 'Esri' }
+    );
+    var osm = L.tileLayer(
+      'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+      { maxZoom: 22, maxNativeZoom: 19, attribution: 'OSM' }
+    );
+    var gursDof = L.tileLayer.wms(
+      'https://prostor4.gov.si/ows2-m-pub/wms',
+      { layers: 'SI.GURS.ZPDOF:DOF', format: 'image/png', transparent: true,
+        maxZoom: 23, maxNativeZoom: 22, attribution: 'GURS DOF',
+        uppercase: true, version: '1.3.0', crs: L.CRS.EPSG4326 }
+    );
 
-    // Street labels overlay
-    L.tileLayer(
-      'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}',
-      { maxZoom: 21, opacity: 0.5 }
-    ).addTo(map);
+    // Default: Google satellite
+    googleSat.addTo(map);
+
+    // Layer control
+    var baseMaps = {
+      'Google Satelit': googleSat,
+      'Google Hybrid': googleHybrid,
+      'GURS DOF (SI ortofoto)': gursDof,
+      'Esri Satelit': esriSat,
+      'OpenStreetMap': osm,
+    };
+    L.control.layers(baseMaps, null, { position: 'topright', collapsed: true }).addTo(map);
 
     // Center marker
     L.circleMarker([lat, lng], {

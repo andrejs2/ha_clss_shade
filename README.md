@@ -125,6 +125,7 @@ Integracija ustvari naslednje senzorje:
 | **Visina sonca** | ° | Kot sonca nad obzorjem (0° = obzorje, 90° = zenit) |
 | **Azimut sonca** | ° | Smer sonca (0° = sever, 90° = vzhod, 180° = jug, 270° = zahod) |
 | **Dnevna svetloba** | da/ne | Ali je sonce nad obzorjem |
+| **Oblacnost** | % | Oblacnost iz ARSO vremenskih podatkov |
 | **Ocena PV moci** | W | Ocena trenutne proizvodnje soncne elektrarne |
 | **Potreba po zalivanju** | L | Ocenjena dnevna potreba po zalivanju za vrt |
 
@@ -140,6 +141,18 @@ Integracija samodejno prepozna cone iz LiDAR klasifikacije in za vsako ustvari d
 | **Odprto** (open) | Tla dalec od stavb | Senca %, Sonce % |
 
 Vsak senzor cone ima tudi atribute: `area_m2` (povrsina v m²) in `cell_count` (stevilo celic v gridu).
+
+#### Uporabniske cone (Zone Editor)
+
+Poleg avtomatsko zaznanih con lahko v **Zone Editorju** (CLSS Shade panel v stranski vrstici) narisite lastne poligone na satelitski karti. Podprtih je vec slojev (Google Satelit, GURS DOF ortofoto, Esri, OpenStreetMap).
+
+Primeri uporabniskih con:
+- **Fasadne cone** — ozke cone pred okni za avtomatizacijo zaluzij
+- **Vrtne cone** — borovnice, zelenjava, trata
+- **PV paneli** — natancen poligon namesto celotne strehe
+- **Terasa, parkirisce, bazen** — poljubne cone
+
+Po shranjevanju in ponovnem zagonu se za vsako cono ustvarijo senzorji `{ime}_shade_percent` in `{ime}_sun_percent`.
 
 ### PV ocena
 
@@ -297,7 +310,118 @@ automation:
             Ocena proizvodnje: {{ states('sensor.clss_shade_home_ocena_pv_moci') }} W.
 ```
 
-### 4. Lovelace kartica — pregled sencenja
+### 4. Avtomatizacija zaluzij po fasadah (napredna uporaba)
+
+Za natancno upravljanje zaluzij/sencil po fasadah narisite **ozke cone** (1-2 m sirine) tik pred vsako fasado hiše v Zone Editorju. Shadow engine bo na podlagi dejanskega 3D modela (vkljucno z napusci, drevesi, sosednjimi stavbami) izracunal ali sonce pada na posamezno fasado.
+
+**Primer razporeditve:**
+
+```
+          SV fasada (kuhinja)
+          ┌────────────┐
+          │            │
+JV fasada │    HISA    │ JZ fasada
+(panorama)│            │ (panoramsko okno
+          │            │  z napuscem)
+          └────────────┘
+          Cone: fasada_sv, fasada_jv, fasada_jz
+```
+
+**Zakaj ozke cone pred fasado?** Ker vas zanima ali sonce pada na okno, ne na cel vrt. Ozka cona 1-2 m pred fasado simulira natancno to — vkljucno z napusci, ki poleti zasenčijo okna, pozimi pa sonce pride pod napusc.
+
+```yaml
+automation:
+  # ── JZ fasada: panoramsko okno z napuscem ──
+  # Poleti: zapri ko sonce sveti skozi (napusc ne zadosca)
+  - alias: "Zaluzije JZ — zapri ob soncu poleti"
+    trigger:
+      - platform: numeric_state
+        entity_id: sensor.dom_fasada_jz_sun_percent
+        above: 60
+        for: "00:05:00"
+    condition:
+      - condition: template
+        value_template: "{{ now().month in [5,6,7,8,9] }}"
+      - condition: numeric_state
+        entity_id: sensor.dom_oblacnost
+        below: 60
+    action:
+      - service: cover.close_cover
+        target:
+          entity_id: cover.zaluzije_dnevna_soba
+
+  # Pozimi: pusti sonce noter za ogrevanje prostorov
+  - alias: "Zaluzije JZ — odpri za solarno ogrevanje pozimi"
+    trigger:
+      - platform: numeric_state
+        entity_id: sensor.dom_fasada_jz_sun_percent
+        above: 50
+    condition:
+      - condition: template
+        value_template: "{{ now().month in [10,11,12,1,2,3] }}"
+      - condition: numeric_state
+        entity_id: sensor.dom_oblacnost
+        below: 50
+    action:
+      - service: cover.open_cover
+        target:
+          entity_id: cover.zaluzije_dnevna_soba
+
+  # ── SV fasada: kuhinja — jutranjo sonce ──
+  - alias: "Zaluzije SV — zapri ob jutranjem soncu"
+    trigger:
+      - platform: numeric_state
+        entity_id: sensor.dom_fasada_sv_sun_percent
+        above: 60
+    condition:
+      - condition: numeric_state
+        entity_id: sensor.dom_oblacnost
+        below: 50
+    action:
+      - service: cover.close_cover
+        target:
+          entity_id: cover.zaluzije_kuhinja
+
+  # ── Vse fasade: odpri ko je oblacno ──
+  - alias: "Zaluzije — odpri ob oblacnem vremenu"
+    trigger:
+      - platform: numeric_state
+        entity_id: sensor.dom_oblacnost
+        above: 70
+        for: "00:10:00"
+    action:
+      - service: cover.open_cover
+        target:
+          entity_id:
+            - cover.zaluzije_dnevna_soba
+            - cover.zaluzije_kuhinja
+            - cover.zaluzije_spalnica
+
+  # ── Ponocna ponastavitev ──
+  - alias: "Zaluzije — odpri ob zori"
+    trigger:
+      - platform: state
+        entity_id: sensor.dom_dnevna_svetloba
+        to: "True"
+    action:
+      - service: cover.open_cover
+        target:
+          entity_id: all
+```
+
+**Senzorji za upravljanje zaluzij:**
+
+| Senzor | Opis | Uporaba |
+|--------|------|---------|
+| `fasada_*_sun_percent` | % sonca na fasadi | Ali sonce sveti na okno (z upostevanjem napusca!) |
+| `oblacnost` | Oblacnost (%) iz ARSO | Odpri zaluzije ko je oblacno |
+| `sun_elevation` | Kot sonca nad obzorjem | Razlikovanje poletje/zima (nizek kot = daljse sence) |
+| `sun_azimuth` | Smer sonca | Za debugging in dodatne pogoje |
+| `is_day` | Dan/noc | Ponocna logika |
+
+**Namig:** Napusc, ki poleti zasenči JZ okno, je ze v LiDAR modelu! Shadow engine samodejno uposteva, da poleti (visoko sonce) napusc meče senco na okno, pozimi (nizko sonce) pa sonce pride pod napusc. Ni potrebe po rocnem nastavljanju kotov.
+
+### 5. Lovelace kartica — pregled sencenja
 
 ```yaml
 type: entities
