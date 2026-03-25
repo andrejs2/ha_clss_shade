@@ -65,11 +65,17 @@ napovedjo (oblacnost) in performance faktorjem → natancna napoved PV proizvodn
   - `pf_mixed` — mešano
 - Formula: `napoved = ocena_shadow × pf_pogoj`
 
-#### 3.3 Vremenski podatki za napoved
-- [ ] Oblacnost napoved iz ARSO (urna napoved za +24h iz weather entity)
-- [ ] Ali uporabiti `weather.get_forecasts` service iz slovenian_weather_integration
+#### 3.3 Vremenski podatki za napoved — ARSO INCA
+- [ ] **INCA nowcasting** (https://meteo.arso.gov.si/uploads/meteo/app/inca/)
+  - 1 km resolucija, posodobitev vsake 15 min, napoved +6h
+  - Soncno sevanje (GHI) — specificno za lokacijo uporabnika, ne postaja
+  - Oblacnost in padavine nowcast
+  - Preveriti: ali je INCA dostopen prek API/JSON ali samo web viewer?
+  - Moznost: dodati INCA modul v slovenian_weather_integration ali direktno v CLSS Shade
+- [ ] Fallback: oblacnost napoved iz ARSO standard (urna napoved za +24h)
+- [ ] `weather.get_forecasts` service iz slovenian_weather_integration
 - [ ] Padavine napoved — ce dezi, PV = 0
-- [ ] Kombinacija: `pv_napoved = shadow_estimate × cloud_factor × performance_factor`
+- [ ] Kombinacija: `pv_napoved = shadow_estimate × INCA_sevanje × performance_factor`
 
 #### 3.4 Novi senzorji
 - [ ] `sensor.dom_pv_napoved_danes_kwh` — skupna napovedana proizvodnja danes (kWh)
