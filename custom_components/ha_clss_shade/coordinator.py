@@ -24,8 +24,10 @@ from .const import (
     CONF_CUSTOM_ZONES,
     CONF_INCLUDE_NEIGHBORS,
     CONF_PV_REAL_ENTITY,
+    CONF_PV_TILT_FACTOR,
     CONF_PV_ZONES_CONFIG,
     CONF_RADIUS,
+    DEFAULT_PV_TILT_FACTOR,
     DATA_DIR_NAME,
     DEFAULT_RADIUS_M,
     DEFAULT_UPDATE_INTERVAL_MIN,
@@ -101,6 +103,7 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
         self._pv_zones_config = self._parse_pv_config(
             entry.options.get(CONF_PV_ZONES_CONFIG, "")
         )
+        self._pv_tilt_factor: float = entry.options.get(CONF_PV_TILT_FACTOR, DEFAULT_PV_TILT_FACTOR)
         self._pv_real_entity: str = entry.options.get(CONF_PV_REAL_ENTITY, "")
 
         # Data directory for this entry
@@ -220,14 +223,16 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
         """Calculate total PV estimate from per-zone capacities."""
         pv_config = self._pv_zones_config
 
+        tilt = self._pv_tilt_factor
+
         if not pv_config:
-            # No PV configured — use old behavior (roof, 5kW default)
             roof_sun = zone_data["roof"].sun_percent if "roof" in zone_data else mean_sun
             return estimate_pv_power(
                 sun_percent=roof_sun,
                 solar_radiation=weather.solar_radiation,
                 cloud_coverage=weather.cloud_coverage,
                 panel_capacity_wp=5000.0,
+                tilt_factor=tilt,
             )
 
         total_power = 0.0
@@ -241,6 +246,7 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
                 solar_radiation=weather.solar_radiation,
                 cloud_coverage=weather.cloud_coverage,
                 panel_capacity_wp=cap,
+                tilt_factor=tilt,
             )
             if result is not None:
                 total_power += result

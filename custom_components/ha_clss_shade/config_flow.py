@@ -13,8 +13,10 @@ from .const import (
     CONF_CUSTOM_ZONES,
     CONF_INCLUDE_NEIGHBORS,
     CONF_PV_REAL_ENTITY,
+    CONF_PV_TILT_FACTOR,
     CONF_PV_ZONES_CONFIG,
     CONF_RADIUS,
+    DEFAULT_PV_TILT_FACTOR,
     DEFAULT_RADIUS_M,
     DOMAIN,
 )
@@ -132,6 +134,7 @@ class ClssShadeOptionsFlow(config_entries.OptionsFlow):
                 CONF_RADIUS: user_input.get(CONF_RADIUS, DEFAULT_RADIUS_M),
                 CONF_INCLUDE_NEIGHBORS: user_input.get(CONF_INCLUDE_NEIGHBORS, False),
                 CONF_PV_ZONES_CONFIG: user_input.get(CONF_PV_ZONES_CONFIG, ""),
+                CONF_PV_TILT_FACTOR: user_input.get(CONF_PV_TILT_FACTOR, DEFAULT_PV_TILT_FACTOR),
                 CONF_PV_REAL_ENTITY: user_input.get(CONF_PV_REAL_ENTITY, ""),
                 CONF_CUSTOM_ZONES: list(
                     self._config_entry.options.get(CONF_CUSTOM_ZONES, [])
@@ -192,6 +195,12 @@ class ClssShadeOptionsFlow(config_entries.OptionsFlow):
                         CONF_PV_ZONES_CONFIG,
                         default=current.get(CONF_PV_ZONES_CONFIG, ""),
                     ): str,
+                    vol.Optional(
+                        CONF_PV_TILT_FACTOR,
+                        default=current.get(CONF_PV_TILT_FACTOR, DEFAULT_PV_TILT_FACTOR),
+                    ): vol.All(
+                        vol.Coerce(float), vol.Range(min=0.5, max=2.0)
+                    ),
                     vol.Optional(
                         CONF_PV_REAL_ENTITY,
                         default=current.get(CONF_PV_REAL_ENTITY, ""),

@@ -264,19 +264,23 @@ def estimate_pv_power(
     solar_radiation: float | None,
     cloud_coverage: float | None = None,
     panel_capacity_wp: float = 5000.0,
-    panel_efficiency: float = 0.18,
-    system_losses: float = 0.14,
+    tilt_factor: float = 1.2,
+    system_losses: float = 0.08,
 ) -> float | None:
     """Estimate PV power output combining shade analysis with solar radiation.
 
     Args:
-        sun_percent: Percentage of direct sunlight on the roof zone (0-100).
-        solar_radiation: Measured global solar radiation in W/m².
+        sun_percent: Percentage of direct sunlight on the PV zone (0-100).
+        solar_radiation: Measured global horizontal radiation in W/m² from ARSO.
         cloud_coverage: Cloud coverage percentage (0-100) from ARSO.
             Used as fallback when solar_radiation is unavailable.
         panel_capacity_wp: Installed PV capacity in Wp.
-        panel_efficiency: Panel efficiency factor (0.0-1.0).
-        system_losses: System losses (inverter, wiring, etc.) as fraction.
+        tilt_factor: Correction for tilted panels vs horizontal sensor.
+            Tilted panels (~30°) receive more radiation than horizontal.
+            Default 1.2 (~20% gain, typical for Slovenia at ~46°N).
+        system_losses: System losses (inverter, wiring, temperature) as fraction.
+            Default 0.08 (8%) for systems with optimizers (SolarEdge, Enphase).
+            Use 0.14 for string inverters without optimizers.
 
     Returns:
         Estimated power output in Watts, or None if no data.
@@ -287,19 +291,22 @@ def estimate_pv_power(
     sun_fraction = sun_percent / 100.0
 
     if solar_radiation is not None and solar_radiation > 0:
-        # Direct estimate from measured radiation
-        # Adjust radiation by shade fraction (diffuse light still arrives in shade)
-        effective_radiation = solar_radiation * (sun_fraction * 0.85 + 0.15)
+        # ARSO measures global horizontal irradiance (GHI).
+        # Tilted panels receive more radiation — apply tilt correction.
+        tilted_radiation = solar_radiation * tilt_factor
+
+        # Shade adjustment: in shade, only diffuse component reaches panels (~20%)
+        effective_radiation = tilted_radiation * (sun_fraction * 0.8 + 0.2)
+
         # Standard test conditions: 1000 W/m²
         power = panel_capacity_wp * (effective_radiation / 1000.0) * (1 - system_losses)
         return round(max(0.0, power), 1)
 
     # Fallback: estimate from cloud coverage (rough approximation)
     if cloud_coverage is not None:
-        # Clear sky ~800 W/m² average, reduced by clouds
         cloud_factor = 1.0 - (cloud_coverage / 100.0) * 0.75
-        estimated_radiation = 800.0 * cloud_factor
-        effective_radiation = estimated_radiation * (sun_fraction * 0.85 + 0.15)
+        estimated_radiation = 800.0 * cloud_factor * tilt_factor
+        effective_radiation = estimated_radiation * (sun_fraction * 0.8 + 0.2)
         power = panel_capacity_wp * (effective_radiation / 1000.0) * (1 - system_losses)
         return round(max(0.0, power), 1)
 

@@ -56,7 +56,9 @@ CONF_PV_CAPACITY_WP = "pv_capacity_wp"
 CONF_PV_ZONE = "pv_zone"
 CONF_PV_ZONES_CONFIG = "pv_zones_config"
 CONF_PV_REAL_ENTITY = "pv_real_entity"
+CONF_PV_TILT_FACTOR = "pv_tilt_factor"
 DEFAULT_PV_CAPACITY_WP = 5000
+DEFAULT_PV_TILT_FACTOR = 1.2
 
 # Data storage
 DATA_DIR_NAME = "clss_shade"
