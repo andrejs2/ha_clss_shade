@@ -126,7 +126,9 @@ Integracija ustvari naslednje senzorje:
 | **Azimut sonca** | ° | Smer sonca (0° = sever, 90° = vzhod, 180° = jug, 270° = zahod) |
 | **Dnevna svetloba** | da/ne | Ali je sonce nad obzorjem |
 | **Oblacnost** | % | Oblacnost iz ARSO vremenskih podatkov |
-| **Ocena PV moci** | W | Ocena trenutne proizvodnje soncne elektrarne |
+| **Ocena PV moci** | W | Ocena trenutne proizvodnje z dinamicnim POA izracunom |
+| **Realna PV moc** | W | Dejanska proizvodnja iz inverterja (opcijsko) |
+| **PV faktor ucinkovitosti** | - | Razmerje realno/ocena (1.0 = idealno) |
 | **Potreba po zalivanju** | L | Ocenjena dnevna potreba po zalivanju za vrt |
 
 #### Senzorji po conah (avtomatska detekcija)
@@ -144,7 +146,7 @@ Vsak senzor cone ima tudi atribute: `area_m2` (povrsina v m²) in `cell_count` (
 
 #### Uporabniske cone (Zone Editor)
 
-Poleg avtomatsko zaznanih con lahko v **Zone Editorju** (CLSS Shade panel v stranski vrstici) narisite lastne poligone na satelitski karti. Podprtih je vec slojev (Google Satelit, GURS DOF ortofoto, Esri, OpenStreetMap).
+Poleg avtomatsko zaznanih con lahko v **Zone Editorju** (CLSS Shade panel v stranski vrstici) narisite lastne poligone na satelitski karti. Podprtih je vec kartografskih slojev (Google Satelit, Google Hybrid, Esri, OpenStreetMap) z visoko resolucijo za natancno risanje.
 
 Primeri uporabniskih con:
 - **Fasadne cone** — ozke cone pred okni za avtomatizacijo zaluzij
@@ -156,16 +158,57 @@ Po shranjevanju in ponovnem zagonu se za vsako cono ustvarijo senzorji `{ime}_sh
 
 ### PV ocena
 
-Ce je na voljo meritev soncnega sevanja iz ARSO Weather, integracija izracuna oceno PV proizvodnje:
+Integracija izracuna oceno PV proizvodnje z uporabo **dinamicnega POA (Plane-of-Array)** izracuna, ki uposteva orientacijo panelov in trenutni polozaj sonca.
+
+#### Nastavitev PV sistema
+
+V **Nastavitve > Naprave > CLSS Shade > Nastavi** vnesite:
+
+| Polje | Opis | Primer |
+|-------|------|--------|
+| **PV cone in kapaciteta** | `cona:Wp` pari, loceni z vejico | `pv-visja:5925,pv-nizja:5135` |
+| **Nagib panelov** | Stopinje od vodoravne (0-90°) | `30` |
+| **Azimut panelov** | Smer panelov (0°=S, 90°=V, 180°=J, 270°=Z) | `180` |
+| **Realna PV moc senzor** | Entity ID inverterja (opcijsko) | `sensor.solaredge_current_power` |
+
+**Namig:** Narisite loceno PV cono za vsako gruco panelov na karti (Zone Editor), da bo izracun natancen.
+
+#### Izracun
 
 ```
-PV_ocena = Kapaciteta_Wp × (Efektivno_sevanje / 1000) × (1 - Izgube)
+1. POA faktor = f(polozaj_sonca, nagib_panelov, azimut_panelov)
+   — dinamicen, izracunan vsake 5 minut
+   — uposteva da nagnjeni paneli lovijo vec sevanja kot horizontalni senzor
+
+2. Za vsako PV cono:
+   POA_sevanje = ARSO_GHI × POA_faktor
+   Efektivno = POA_sevanje × (sonce% × 0.8 + 0.2)
+   Moc = Kapaciteta_Wp × (Efektivno / 1000) × (1 - Izgube)
+
+3. Skupna ocena = vsota vseh PV con
 ```
 
 Kjer:
-- **Efektivno sevanje** = izmerjeno sevanje × (delez_sonca_na_strehi × 0.85 + 0.15) — uposteva, da tudi v senci prispe nekaj difuzne svetlobe
-- **Izgube** = 14% (inverter, kabliranje, temperatura)
-- **Kapaciteta_Wp** = nastavljena moc sistema (privzeto 5 kWp)
+- **ARSO_GHI** = globalno horizontalno sevanje iz ARSO Weather (W/m²)
+- **POA faktor** = `cos(θ_vpad) / sin(θ_elevacija)` × 0.7 + difuzni_faktor × 0.3
+- **Sonce%** = delez direktnega sonca na PV coni iz shadow engine
+- **Izgube** = 8% (inverter, kabliranje; privzeto za sisteme z optimizerji)
+
+#### Faktor ucinkovitosti
+
+Ce povezete realni PV senzor (SolarEdge, Fronius, Enphase...), integracija izracuna **faktor ucinkovitosti**:
+
+```
+Faktor = Realna_moc / Ocena_moci
+```
+
+| Faktor | Status | Pomen |
+|--------|--------|-------|
+| 0.85 – 1.15 | **Normalno** | Model se ujema z realnostjo |
+| < 0.70 | **Nizka ucinkovitost** | Umazani paneli, okvara, nov objekt ki senci |
+| > 1.30 | **Ocena prenizka** | Preverite nastavitve (nagib, azimut, kapaciteta) |
+
+**Uporaba:** Faktor omogoca detekcijo anomalij in bo v prihodnosti sluzil za kalibracijo PV napovedi (Faza 3).
 
 ### Pametno zalivanje
 
