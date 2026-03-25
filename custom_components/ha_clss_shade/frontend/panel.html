@@ -136,7 +136,7 @@
 <body>
 
 <div class="toolbar">
-  <h1>CLSS Shade — Zone Editor <small style="color:#666;font-size:11px">v9</small></h1>
+  <h1>CLSS Shade — Zone Editor <small style="color:#666;font-size:11px">v10</small></h1>
   <span class="status" id="status">Nalagam...</span>
   <button class="primary" id="btn-save" disabled>Shrani</button>
 </div>
@@ -373,12 +373,18 @@
     showModal();
   }
 
+  function findZoneByName(name) {
+    return customZones.findIndex(function(z) { return z.name === name; });
+  }
+
   function onDrawEdited(e) {
     e.layers.eachLayer(function(layer) {
-      const zoneIdx = layer._clssZoneIdx;
-      if (zoneIdx !== undefined && customZones[zoneIdx]) {
-        const coords = layer.getLatLngs()[0].map(ll => [ll.lat, ll.lng]);
-        customZones[zoneIdx].vertices = coords;
+      var name = layer._clssZoneName;
+      if (!name) return;
+      var idx = findZoneByName(name);
+      if (idx >= 0) {
+        var coords = layer.getLatLngs()[0].map(function(ll) { return [ll.lat, ll.lng]; });
+        customZones[idx].vertices = coords;
       }
     });
     markDirty();
@@ -386,17 +392,15 @@
   }
 
   function onDrawDeleted(e) {
-    const toRemove = [];
+    var namesToRemove = [];
     e.layers.eachLayer(function(layer) {
-      if (layer._clssZoneIdx !== undefined) {
-        toRemove.push(layer._clssZoneIdx);
+      if (layer._clssZoneName) {
+        namesToRemove.push(layer._clssZoneName);
       }
     });
-    // Remove in reverse order to keep indices valid
-    toRemove.sort((a, b) => b - a);
-    for (const idx of toRemove) {
-      customZones.splice(idx, 1);
-    }
+    customZones = customZones.filter(function(z) {
+      return namesToRemove.indexOf(z.name) === -1;
+    });
     markDirty();
     refreshZoneList();
   }
@@ -457,7 +461,7 @@
       fillOpacity: 0.3,
       weight: 2,
     });
-    pendingLayer._clssZoneIdx = customZones.length - 1;
+    pendingLayer._clssZoneName = name;
     pendingLayer.bindTooltip(name, { permanent: true, direction: 'center', className: 'zone-label' });
     drawnItems.addLayer(pendingLayer);
     pendingLayer = null;
@@ -490,7 +494,7 @@
         fillOpacity: 0.3,
         weight: 2,
       });
-      layer._clssZoneIdx = idx;
+      layer._clssZoneName = zone.name;
       layer.bindTooltip(zone.name, { permanent: true, direction: 'center' });
       drawnItems.addLayer(layer);
     });
@@ -508,57 +512,53 @@
       return;
     }
 
-    customZones.forEach(function(zone, idx) {
-      const div = document.createElement('div');
+    customZones.forEach(function(zone) {
+      var div = document.createElement('div');
       div.className = 'zone-item';
 
-      const color = zone.color || ZONE_COLORS[zone.zone_type] || '#2196F3';
-      const vCount = (zone.vertices || []).length;
+      var color = zone.color || ZONE_COLORS[zone.zone_type] || '#2196F3';
+      var vCount = (zone.vertices || []).length;
+      var zoneName = zone.name;
 
       div.innerHTML =
         '<span class="color-dot" style="background:' + color + '"></span>' +
-        '<span class="name">' + zone.name + '</span>' +
+        '<span class="name">' + zoneName + '</span>' +
         '<span class="type">' + zone.zone_type + ' (' + vCount + ')</span>' +
         '<button class="delete-btn" title="Odstrani">&times;</button>';
 
       // Click to zoom
       div.addEventListener('click', function(e) {
         if (e.target.classList.contains('delete-btn')) return;
-        zoomToZone(idx);
+        zoomToZone(zoneName);
       });
 
       // Delete button
       div.querySelector('.delete-btn').addEventListener('click', function() {
-        deleteZone(idx);
+        deleteZone(zoneName);
       });
 
       list.appendChild(div);
     });
   }
 
-  function zoomToZone(idx) {
-    const zone = customZones[idx];
-    if (!zone || !zone.vertices || zone.vertices.length < 3) return;
-    const bounds = L.latLngBounds(zone.vertices.map(v => L.latLng(v[0], v[1])));
+  function zoomToZone(name) {
+    var idx = findZoneByName(name);
+    if (idx < 0) return;
+    var zone = customZones[idx];
+    if (!zone.vertices || zone.vertices.length < 3) return;
+    var bounds = L.latLngBounds(zone.vertices.map(function(v) { return L.latLng(v[0], v[1]); }));
     map.fitBounds(bounds, { padding: [50, 50] });
   }
 
-  function deleteZone(idx) {
+  function deleteZone(name) {
     // Remove layer from map
     drawnItems.eachLayer(function(layer) {
-      if (layer._clssZoneIdx === idx) {
+      if (layer._clssZoneName === name) {
         drawnItems.removeLayer(layer);
       }
     });
 
-    customZones.splice(idx, 1);
-
-    // Re-index remaining layers
-    drawnItems.eachLayer(function(layer) {
-      if (layer._clssZoneIdx !== undefined && layer._clssZoneIdx > idx) {
-        layer._clssZoneIdx--;
-      }
-    });
+    customZones = customZones.filter(function(z) { return z.name !== name; });
 
     markDirty();
     refreshZoneList();
@@ -573,9 +573,11 @@
     try {
       // Sync layer positions back to zones (in case of edits)
       drawnItems.eachLayer(function(layer) {
-        const idx = layer._clssZoneIdx;
-        if (idx !== undefined && customZones[idx] && layer.getLatLngs) {
-          const coords = layer.getLatLngs()[0].map(ll => [ll.lat, ll.lng]);
+        var name = layer._clssZoneName;
+        if (!name || !layer.getLatLngs) return;
+        var idx = findZoneByName(name);
+        if (idx >= 0) {
+          var coords = layer.getLatLngs()[0].map(function(ll) { return [ll.lat, ll.lng]; });
           customZones[idx].vertices = coords;
         }
       });
