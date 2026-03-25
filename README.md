@@ -421,32 +421,266 @@ automation:
 
 **Namig:** Napusc, ki poleti zasenči JZ okno, je ze v LiDAR modelu! Shadow engine samodejno uposteva, da poleti (visoko sonce) napusc meče senco na okno, pozimi (nizko sonce) pa sonce pride pod napusc. Ni potrebe po rocnem nastavljanju kotov.
 
-### 5. Lovelace kartica — pregled sencenja
+### 5. Dashboard — primeri Lovelace kartic
+
+Spodaj so primeri kartic za celovit CLSS Shade dashboard. Zamenjajte `dom` z imenom vase lokacije.
+
+#### 5.1 Pregled — sonce in senca (gauge kartice)
+
+```yaml
+type: horizontal-stack
+cards:
+  - type: gauge
+    entity: sensor.dom_sonce
+    name: Sonce
+    min: 0
+    max: 100
+    severity:
+      green: 60
+      yellow: 30
+      red: 0
+    needle: true
+  - type: gauge
+    entity: sensor.dom_senca
+    name: Senca
+    min: 0
+    max: 100
+    severity:
+      green: 0
+      yellow: 30
+      red: 60
+    needle: true
+  - type: gauge
+    entity: sensor.dom_oblacnost
+    name: Oblacnost
+    min: 0
+    max: 100
+    severity:
+      green: 0
+      yellow: 40
+      red: 70
+    needle: true
+```
+
+#### 5.2 Polozaj sonca
 
 ```yaml
 type: entities
-title: "CLSS Shade — Dom"
+title: "Polozaj sonca"
+icon: mdi:white-balance-sunny
 entities:
-  - entity: sensor.clss_shade_home_senca
-    name: "Skupna senca"
-  - entity: sensor.clss_shade_home_sonce
-    name: "Skupno sonce"
-  - type: divider
-  - entity: sensor.clss_shade_home_roof_shade_percent
-    name: "Streha — senca"
-    icon: mdi:home-roof
-  - entity: sensor.clss_shade_home_garden_shade_percent
-    name: "Vrt — senca"
-    icon: mdi:flower
-  - type: divider
-  - entity: sensor.clss_shade_home_ocena_pv_moci
-    name: "PV ocena"
-  - entity: sensor.clss_shade_home_potreba_po_zalivanju
-    name: "Zalivanje"
-  - type: divider
-  - entity: sensor.clss_shade_home_visina_sonca
-  - entity: sensor.clss_shade_home_azimut_sonca
+  - entity: sensor.dom_visina_sonca
+    name: "Visina (elevacija)"
+    icon: mdi:angle-acute
+  - entity: sensor.dom_azimut_sonca
+    name: "Smer (azimut)"
+    icon: mdi:compass
+  - entity: sensor.dom_dnevna_svetloba
+    name: "Dan / noc"
+    icon: mdi:theme-light-dark
+  - entity: sensor.dom_oblacnost
+    name: "Oblacnost"
+    icon: mdi:weather-cloudy
 ```
+
+#### 5.3 Sencenje po conah — primerjava
+
+```yaml
+type: entities
+title: "Sencenje po conah"
+icon: mdi:select-group
+show_header_toggle: false
+entities:
+  - type: section
+    label: "Avtomatske cone (LiDAR)"
+  - entity: sensor.dom_roof_sun_percent
+    name: "Streha — sonce"
+    icon: mdi:home-roof
+  - entity: sensor.dom_garden_sun_percent
+    name: "Vrt — sonce"
+    icon: mdi:flower
+  - entity: sensor.dom_trees_sun_percent
+    name: "Drevesa — sonce"
+    icon: mdi:tree
+  - type: section
+    label: "Uporabniske cone"
+  - entity: sensor.dom_borovnice_sun_percent
+    name: "Borovnice — sonce"
+    icon: mdi:fruit-grapes
+  - entity: sensor.dom_zelenjava_sun_percent
+    name: "Zelenjava — sonce"
+    icon: mdi:sprout
+  - entity: sensor.dom_jz_terasa_sun_percent
+    name: "JZ terasa — sonce"
+    icon: mdi:deck
+  - entity: sensor.dom_jv_terasa_sun_percent
+    name: "JV terasa — sonce"
+    icon: mdi:deck
+```
+
+#### 5.4 Fasade — stanje za zaluzije
+
+```yaml
+type: glance
+title: "Fasade — osoncenje"
+columns: 3
+show_state: true
+entities:
+  - entity: sensor.dom_fasada_sv_sun_percent
+    name: "SV (kuhinja)"
+    icon: mdi:blinds
+  - entity: sensor.dom_fasada_jv_sun_percent
+    name: "JV (panorama)"
+    icon: mdi:blinds-open
+  - entity: sensor.dom_fasada_jz_sun_percent
+    name: "JZ (dnevna)"
+    icon: mdi:blinds
+```
+
+#### 5.5 Zgodovina sencenja — graf cez dan
+
+```yaml
+type: history-graph
+title: "Sencenje danes"
+hours_to_show: 24
+entities:
+  - entity: sensor.dom_sonce
+    name: "Skupno sonce"
+  - entity: sensor.dom_roof_sun_percent
+    name: "Streha"
+  - entity: sensor.dom_borovnice_sun_percent
+    name: "Borovnice"
+  - entity: sensor.dom_zelenjava_sun_percent
+    name: "Zelenjava"
+```
+
+#### 5.6 Fasade cez dan — kdaj sonce pride na katero stran
+
+```yaml
+type: history-graph
+title: "Fasade — sonce cez dan"
+hours_to_show: 24
+entities:
+  - entity: sensor.dom_fasada_sv_sun_percent
+    name: "SV (kuhinja)"
+  - entity: sensor.dom_fasada_jv_sun_percent
+    name: "JV (panorama)"
+  - entity: sensor.dom_fasada_jz_sun_percent
+    name: "JZ (dnevna soba)"
+```
+
+#### 5.7 PV in energija
+
+```yaml
+type: vertical-stack
+cards:
+  - type: gauge
+    entity: sensor.dom_ocena_pv_moci
+    name: "PV ocena"
+    min: 0
+    max: 5000
+    unit: "W"
+    severity:
+      green: 2000
+      yellow: 500
+      red: 0
+    needle: true
+  - type: entities
+    entities:
+      - entity: sensor.dom_roof_sun_percent
+        name: "Streha — sonce"
+        icon: mdi:home-roof
+      - entity: sensor.dom_oblacnost
+        name: "Oblacnost"
+        icon: mdi:weather-cloudy
+      - entity: sensor.dom_visina_sonca
+        name: "Visina sonca"
+        icon: mdi:angle-acute
+```
+
+#### 5.8 Zalivanje — agrometeo
+
+```yaml
+type: vertical-stack
+cards:
+  - type: gauge
+    entity: sensor.dom_potreba_po_zalivanju
+    name: "Potreba po zalivanju"
+    min: 0
+    max: 500
+    unit: "L"
+    severity:
+      green: 0
+      yellow: 100
+      red: 300
+    needle: true
+  - type: entities
+    title: "Agrometeo podatki"
+    entities:
+      - type: attribute
+        entity: sensor.dom_potreba_po_zalivanju
+        attribute: evapotranspiration_mm
+        name: "Evapotranspiracija"
+        suffix: " mm"
+        icon: mdi:water-thermometer
+      - type: attribute
+        entity: sensor.dom_potreba_po_zalivanju
+        attribute: water_balance_mm
+        name: "Vodna bilanca"
+        suffix: " mm"
+        icon: mdi:water-percent
+      - type: attribute
+        entity: sensor.dom_potreba_po_zalivanju
+        attribute: vir_podatkov
+        name: "Vir podatkov"
+        icon: mdi:database
+      - entity: sensor.dom_garden_shade_percent
+        name: "Vrt — senca"
+        icon: mdi:flower
+      - entity: sensor.dom_borovnice_shade_percent
+        name: "Borovnice — senca"
+        icon: mdi:fruit-grapes
+```
+
+#### 5.9 Polozaj sonca — kompas in pot cez dan
+
+```yaml
+type: history-graph
+title: "Pot sonca cez dan"
+hours_to_show: 24
+entities:
+  - entity: sensor.dom_visina_sonca
+    name: "Elevacija (°)"
+  - entity: sensor.dom_azimut_sonca
+    name: "Azimut (°)"
+```
+
+#### 5.10 Celoten dashboard — priporocena razporeditev
+
+Za celovit CLSS Shade dashboard priporocamo razporeditev v 2-3 stolpce:
+
+```
+┌─────────────────┬──────────────────┬─────────────────┐
+│  Gauge: Sonce   │  Gauge: Senca    │ Gauge: Oblacnost│
+├─────────────────┴──────────────────┴─────────────────┤
+│  Polozaj sonca (entities)                            │
+├──────────────────────────┬───────────────────────────┤
+│  Cone — sence (entities) │  Fasade — glance          │
+├──────────────────────────┼───────────────────────────┤
+│  Zgodovina sencenja      │  Fasade cez dan (graf)    │
+│  (history-graph)         │  (history-graph)           │
+├──────────────────────────┼───────────────────────────┤
+│  PV ocena (gauge +       │  Zalivanje (gauge +        │
+│  entities)               │  agrometeo atributi)       │
+├──────────────────────────┴───────────────────────────┤
+│  Pot sonca cez dan (history-graph)                   │
+└──────────────────────────────────────────────────────┘
+```
+
+**Namig:** Za se lepse kartice namestite prek HACS se:
+- [mushroom-cards](https://github.com/piitaya/lovelace-mushroom) — za kompaktne entity kartice
+- [mini-graph-card](https://github.com/kalkih/mini-graph-card) — za lepe inline grafe
+- [apexcharts-card](https://github.com/RomRider/apexcharts-card) — za napredne grafe (npr. sonce/senca area chart)
 
 ---
 
