@@ -24,12 +24,12 @@
     "step": {
       "init": {
         "title": "Nastavitve CLSS Shade",
-        "description": "Uporabniske cone:\n{custom_zones}",
+        "description": "Uporabniske cone:\n{custom_zones}\n\n**PV nastavitev:** Narisite PV cone na karti, nato vnesite imena con z mocjo spodaj.\nFormat: `ime_cone:wati` — vec con locite z vejico.\nPrimer: `pv_visja:5000,pv_nizja:6000` = dve gruci, skupaj 11 kW.\nPustite prazno za avtomatsko streho z 5 kW.\n\n**Realna PV entiteta:** Opcijsko — povezite senzor inverterja (SolarEdge, Fronius...)\nza primerjavo realne proizvodnje z oceno iz sencenja. Omogoca sledenje ucinkovitosti.",
         "data": {
           "radius": "Radij analize (metri)",
           "include_neighbors": "Vkljuci sosednje ploscice (3x3 km)",
-          "pv_zones_config": "PV cone — cona:Wp pari (npr. pv_visja:5000,pv_nizja:6000)",
-          "pv_real_entity": "Realna PV moc entiteta (npr. sensor.solaredge_current_power)",
+          "pv_zones_config": "PV cone in kapaciteta (cona:Wp, npr. pv_visja:5000,pv_nizja:6000)",
+          "pv_real_entity": "Realna PV moc senzor (opcijsko, npr. sensor.solaredge_current_power)",
           "zone_action": "Upravljanje con"
         }
       },
