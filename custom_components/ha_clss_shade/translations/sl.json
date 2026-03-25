@@ -87,6 +87,9 @@
       "is_day": {
         "name": "Dnevna svetloba"
       },
+      "cloud_coverage": {
+        "name": "Oblacnost"
+      },
       "pv_power_estimate": {
         "name": "Ocena PV moci"
       },

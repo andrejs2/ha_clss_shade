@@ -69,6 +69,7 @@ class ClssShadeData:
     sun_elevation: float
     sun_azimuth: float
     is_day: bool
+    cloud_coverage: float | None = None
     zones: dict[str, ZoneData] = field(default_factory=dict)
     weather: ArsoWeatherData | None = None
     pv_power_estimate: float | None = None
@@ -283,6 +284,7 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
                 pv_estimate = estimate_pv_power(
                     sun_percent=roof_sun,
                     solar_radiation=weather.solar_radiation,
+                    cloud_coverage=weather.cloud_coverage,
                 )
 
                 # Irrigation estimate using garden zone shade
@@ -305,6 +307,7 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
                 sun_elevation=round(sun.elevation, 1),
                 sun_azimuth=round(sun.azimuth, 1),
                 is_day=True,
+                cloud_coverage=weather.cloud_coverage if weather else None,
                 zones=zone_data,
                 weather=weather,
                 pv_power_estimate=pv_estimate,

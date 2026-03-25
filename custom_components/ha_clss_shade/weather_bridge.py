@@ -262,6 +262,7 @@ def read_arso_weather(
 def estimate_pv_power(
     sun_percent: float,
     solar_radiation: float | None,
+    cloud_coverage: float | None = None,
     panel_capacity_wp: float = 5000.0,
     panel_efficiency: float = 0.18,
     system_losses: float = 0.14,
@@ -271,7 +272,8 @@ def estimate_pv_power(
     Args:
         sun_percent: Percentage of direct sunlight on the roof zone (0-100).
         solar_radiation: Measured global solar radiation in W/m².
-            If None, uses a theoretical clear-sky estimate.
+        cloud_coverage: Cloud coverage percentage (0-100) from ARSO.
+            Used as fallback when solar_radiation is unavailable.
         panel_capacity_wp: Installed PV capacity in Wp.
         panel_efficiency: Panel efficiency factor (0.0-1.0).
         system_losses: System losses (inverter, wiring, etc.) as fraction.
@@ -289,6 +291,15 @@ def estimate_pv_power(
         # Adjust radiation by shade fraction (diffuse light still arrives in shade)
         effective_radiation = solar_radiation * (sun_fraction * 0.85 + 0.15)
         # Standard test conditions: 1000 W/m²
+        power = panel_capacity_wp * (effective_radiation / 1000.0) * (1 - system_losses)
+        return round(max(0.0, power), 1)
+
+    # Fallback: estimate from cloud coverage (rough approximation)
+    if cloud_coverage is not None:
+        # Clear sky ~800 W/m² average, reduced by clouds
+        cloud_factor = 1.0 - (cloud_coverage / 100.0) * 0.75
+        estimated_radiation = 800.0 * cloud_factor
+        effective_radiation = estimated_radiation * (sun_fraction * 0.85 + 0.15)
         power = panel_capacity_wp * (effective_radiation / 1000.0) * (1 - system_losses)
         return round(max(0.0, power), 1)
 

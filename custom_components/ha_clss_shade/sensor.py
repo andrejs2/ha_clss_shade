@@ -63,6 +63,13 @@ GLOBAL_SENSORS: tuple[SensorEntityDescription, ...] = (
         icon="mdi:white-balance-sunny",
     ),
     SensorEntityDescription(
+        key="cloud_coverage",
+        translation_key="cloud_coverage",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:weather-cloudy",
+    ),
+    SensorEntityDescription(
         key="pv_power_estimate",
         translation_key="pv_power_estimate",
         native_unit_of_measurement=UnitOfPower.WATT,
@@ -195,12 +202,15 @@ class ClssShadeSensor(CoordinatorEntity[ClssShadeCoordinator], SensorEntity):
                 attrs[f"zone_{zname}_shade"] = zdata.shade_percent
             return attrs
 
-        if key == "pv_power_estimate" and data.weather:
-            return {
-                "solar_radiation_wm2": data.weather.solar_radiation,
-                "roof_sun_percent": data.zones.get("roof", None)
-                and data.zones["roof"].sun_percent,
-            }
+        if key == "pv_power_estimate":
+            attrs = {}
+            if data.weather:
+                attrs["solar_radiation_wm2"] = data.weather.solar_radiation
+                attrs["cloud_coverage_pct"] = data.weather.cloud_coverage
+            attrs["roof_sun_percent"] = (
+                data.zones["roof"].sun_percent if "roof" in data.zones else None
+            )
+            return attrs if attrs else None
 
         if key == "irrigation_need" and data.weather:
             attrs = {

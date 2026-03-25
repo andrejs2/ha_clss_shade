@@ -87,6 +87,9 @@
       "is_day": {
         "name": "Daylight"
       },
+      "cloud_coverage": {
+        "name": "Cloud coverage"
+      },
       "pv_power_estimate": {
         "name": "PV power estimate"
       },
