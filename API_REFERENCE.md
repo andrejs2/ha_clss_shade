@@ -166,3 +166,76 @@ Te podatke beremo iz HA entitet, ne neposredno iz API-ja.
 - WMS/WFS/WMTS na `https://www.e-prostor.gov.si/`
 - Predvsem za vektorske/katastrske podatke, ne za tockovni oblak
 - Morda uporabno za parcele, stavbe (kot dopolnilo LiDAR)
+
+---
+
+## 7. ARSO INCA — Nowcasting (za Fazo 3 PV napoved)
+
+### Pregled
+INCA (Integrated Nowcasting through Comprehensive Analysis) — ARSO sistem za
+kratkorocno vremensko napoved z visoko resolucijo.
+- **Resolucija**: 1 km grid cez celo Slovenijo
+- **Posodobitev**: vsake 5-15 minut
+- **Napoved**: do +6 ur (nowcasting)
+- **Spletni pregledovalnik**: https://meteo.arso.gov.si/uploads/meteo/app/inca/
+
+### JSON API endpointi
+
+Base URL: `https://meteo.arso.gov.si/uploads/probase/www/nowcast/inca/`
+
+| Endpoint | Podatek | Interval |
+|----------|---------|----------|
+| `inca_si0zm_data.json?prod=si0zm` | **Soncno sevanje (GHI)** | 5 min |
+| `inca_t2m_data.json?prod=t2m` | Temperatura 2m | 1 ura |
+| `inca_hp_data.json?prod=hp` | Padavine | 5 min |
+| `inca_sp_data.json?prod=sp` | Tlak | ? |
+| `inca_wind_data.json?prod=wind` | Veter | ? |
+
+### Struktura JSON odgovora
+
+```json
+[
+  {
+    "mode": "ANL",
+    "path": "/uploads/probase/www/nowcast/inca/inca_si0zm_20260325-1240+0000.png",
+    "date": "202603251240",
+    "hhmm": "1240",
+    "bbox": "44.67,12.1,47.42,17.44",
+    "width": "800",
+    "height": "600",
+    "valid": "2026-03-25T12:40:00Z"
+  }
+]
+```
+
+- `mode`: "ANL" (analiza/meritev) ali potencialno "FC" (napoved)
+- `path`: pot do PNG slike na ARSO strezniku
+- `bbox`: lat_min,lon_min,lat_max,lon_max (WGS84)
+- `width/height`: velikost PNG v pikslih
+
+### Branje vrednosti za specificno lokacijo
+
+Podatki so zakodirani kot piksel vrednosti v PNG slikah.
+Za branje za doloceno lat/lon:
+
+```python
+# 1. Izracunaj pixel koordinato iz bbox
+bbox = [44.67, 12.1, 47.42, 17.44]  # lat_min, lon_min, lat_max, lon_max
+pixel_x = int((lon - bbox[1]) / (bbox[3] - bbox[1]) * width)
+pixel_y = int((bbox[2] - lat) / (bbox[2] - bbox[0]) * height)
+
+# 2. Prenesi PNG in preberi pixel
+# 3. Pretvori pixel vrednost v fizikalno enoto (barvna skala)
+```
+
+### Odprta vprasanja
+- Barvna skala: kako pretvoriti pixel RGB v W/m2 (sevanje) ali mm (padavine)?
+- Ali obstajajo FC (forecast) endpointi poleg ANL (analiza)?
+- Ali je morda kje GeoTIFF ali NetCDF verzija namesto PNG?
+- Rate limiting: koliko pogosto smemo klicati?
+
+### Uporaba za CLSS Shade (Faza 3)
+`si0zm` (soncno sevanje na 5 min / 1 km) je idealen vir za PV nowcast:
+- Lokacijsko specificen (ne ena postaja za celo mesto)
+- Visoka casovna resolucija (5 min vs 30 min za ARSO postaje)
+- Zdruziti z shadow engine + POA model = natancna PV napoved za +6h
