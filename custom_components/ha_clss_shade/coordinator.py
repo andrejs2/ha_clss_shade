@@ -23,8 +23,11 @@ from .clss_data.slovenian_downloader import (
 from .const import (
     CONF_CUSTOM_ZONES,
     CONF_INCLUDE_NEIGHBORS,
+    CONF_PV_CAPACITY_WP,
+    CONF_PV_ZONE,
     CONF_RADIUS,
     DATA_DIR_NAME,
+    DEFAULT_PV_CAPACITY_WP,
     DEFAULT_RADIUS_M,
     DEFAULT_UPDATE_INTERVAL_MIN,
     DOMAIN,
@@ -94,6 +97,8 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
         self._lon: float = entry.data[CONF_LONGITUDE]
         self._radius: float = entry.options.get(CONF_RADIUS, DEFAULT_RADIUS_M)
         self._include_neighbors: bool = entry.options.get(CONF_INCLUDE_NEIGHBORS, False)
+        self._pv_capacity_wp: float = entry.options.get(CONF_PV_CAPACITY_WP, DEFAULT_PV_CAPACITY_WP)
+        self._pv_zone: str = entry.options.get(CONF_PV_ZONE, "roof")
 
         # Data directory for this entry
         self._data_dir = Path(hass.config.path(DATA_DIR_NAME, entry.entry_id))
@@ -279,12 +284,14 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
             if self._arso_entities:
                 weather = read_arso_weather(self.hass, self._arso_entities)
 
-                # PV estimate using roof zone shade
-                roof_sun = zone_data["roof"].sun_percent if "roof" in zone_data else mean_sun
+                # PV estimate using configured zone (default: roof)
+                pv_zone = self._pv_zone
+                pv_sun = zone_data[pv_zone].sun_percent if pv_zone in zone_data else mean_sun
                 pv_estimate = estimate_pv_power(
-                    sun_percent=roof_sun,
+                    sun_percent=pv_sun,
                     solar_radiation=weather.solar_radiation,
                     cloud_coverage=weather.cloud_coverage,
+                    panel_capacity_wp=self._pv_capacity_wp,
                 )
 
                 # Irrigation estimate using garden zone shade

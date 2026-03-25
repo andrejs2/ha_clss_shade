@@ -52,6 +52,9 @@ CONF_RADIUS = "radius"
 CONF_NAME = "name"
 CONF_INCLUDE_NEIGHBORS = "include_neighbors"
 CONF_CUSTOM_ZONES = "custom_zones"
+CONF_PV_CAPACITY_WP = "pv_capacity_wp"
+CONF_PV_ZONE = "pv_zone"
+DEFAULT_PV_CAPACITY_WP = 5000
 
 # Data storage
 DATA_DIR_NAME = "clss_shade"

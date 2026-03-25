@@ -12,7 +12,10 @@ from homeassistant.const import CONF_LATITUDE, CONF_LONGITUDE, CONF_NAME
 from .const import (
     CONF_CUSTOM_ZONES,
     CONF_INCLUDE_NEIGHBORS,
+    CONF_PV_CAPACITY_WP,
+    CONF_PV_ZONE,
     CONF_RADIUS,
+    DEFAULT_PV_CAPACITY_WP,
     DEFAULT_RADIUS_M,
     DOMAIN,
 )
@@ -129,6 +132,8 @@ class ClssShadeOptionsFlow(config_entries.OptionsFlow):
             self._options = {
                 CONF_RADIUS: user_input.get(CONF_RADIUS, DEFAULT_RADIUS_M),
                 CONF_INCLUDE_NEIGHBORS: user_input.get(CONF_INCLUDE_NEIGHBORS, False),
+                CONF_PV_CAPACITY_WP: user_input.get(CONF_PV_CAPACITY_WP, DEFAULT_PV_CAPACITY_WP),
+                CONF_PV_ZONE: user_input.get(CONF_PV_ZONE, "roof"),
                 CONF_CUSTOM_ZONES: list(
                     self._config_entry.options.get(CONF_CUSTOM_ZONES, [])
                 ),
@@ -184,6 +189,16 @@ class ClssShadeOptionsFlow(config_entries.OptionsFlow):
                         CONF_INCLUDE_NEIGHBORS,
                         default=current.get(CONF_INCLUDE_NEIGHBORS, False),
                     ): bool,
+                    vol.Optional(
+                        CONF_PV_CAPACITY_WP,
+                        default=current.get(CONF_PV_CAPACITY_WP, DEFAULT_PV_CAPACITY_WP),
+                    ): vol.All(
+                        vol.Coerce(int), vol.Range(min=0, max=100000)
+                    ),
+                    vol.Optional(
+                        CONF_PV_ZONE,
+                        default=current.get(CONF_PV_ZONE, "roof"),
+                    ): str,
                     vol.Required("zone_action", default="done"): vol.In(zone_actions),
                 }
             ),

@@ -203,14 +203,19 @@ class ClssShadeSensor(CoordinatorEntity[ClssShadeCoordinator], SensorEntity):
             return attrs
 
         if key == "pv_power_estimate":
-            attrs = {}
+            pv_zone = self.coordinator.config_entry.options.get("pv_zone", "roof")
+            pv_cap = self.coordinator.config_entry.options.get("pv_capacity_wp", 5000)
+            attrs = {
+                "pv_capacity_wp": pv_cap,
+                "pv_zone": pv_zone,
+            }
             if data.weather:
                 attrs["solar_radiation_wm2"] = data.weather.solar_radiation
                 attrs["cloud_coverage_pct"] = data.weather.cloud_coverage
-            attrs["roof_sun_percent"] = (
-                data.zones["roof"].sun_percent if "roof" in data.zones else None
+            attrs["pv_zone_sun_percent"] = (
+                data.zones[pv_zone].sun_percent if pv_zone in data.zones else None
             )
-            return attrs if attrs else None
+            return attrs
 
         if key == "irrigation_need" and data.weather:
             attrs = {
