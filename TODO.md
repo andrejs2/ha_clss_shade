@@ -42,6 +42,12 @@ napovedjo (oblacnost) in performance faktorjem → natancna napoved PV proizvodn
 
 ### Nacrt implementacije
 
+#### 3.0 Per-zone panel tilt + azimut za natancen POA izracun
+- [ ] Razsiriti PV config format: `cona:Wp:nagib:azimut` (npr. `pv-visja:5925:30:185`)
+- [ ] POA (plane-of-array) irradiance izracun iz GHI + sun position + panel orientacija
+- [ ] `cos(theta_incidence) / cos(theta_zenith)` za vsako uro → dinamicen tilt faktor
+- [ ] Zamenja fiksni tilt_factor z izracunanim per-zone per-hour
+
 #### 3.1 Shadow engine za prihodnje casovne tocke
 - [ ] `compute_shadow_forecast(site, lat, lon, hours_ahead=24, step_minutes=30)`
 - Za vsako casovno tocko: izracunaj polozaj sonca + shadow map
