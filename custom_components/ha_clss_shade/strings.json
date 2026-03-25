@@ -29,7 +29,8 @@
           "radius": "Analysis radius (meters)",
           "include_neighbors": "Include neighboring tiles (3x3 km)",
           "pv_zones_config": "PV zones and capacity (zone:Wp, e.g. pv_upper:5000,pv_lower:6000)",
-          "pv_tilt_factor": "Panel tilt factor (1.0=flat, 1.2=30° tilt, 1.35=optimal winter)",
+          "pv_panel_tilt": "Panel tilt angle in degrees (0=flat, 30=typical, 90=vertical)",
+          "pv_panel_azimuth": "Panel azimuth in degrees (0=North, 90=East, 180=South, 270=West)",
           "pv_real_entity": "Real PV power sensor (optional, e.g. sensor.solaredge_current_power)",
           "zone_action": "Zone management"
         }

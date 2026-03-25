@@ -259,12 +259,65 @@ def read_arso_weather(
     return data
 
 
+def compute_poa_factor(
+    sun_elevation: float,
+    sun_azimuth: float,
+    panel_tilt: float = 30.0,
+    panel_azimuth: float = 180.0,
+) -> float:
+    """Compute Plane-of-Array factor: ratio of radiation on tilted panel vs horizontal.
+
+    Args:
+        sun_elevation: Sun elevation in degrees (0=horizon, 90=zenith).
+        sun_azimuth: Sun azimuth in degrees (0=N, 90=E, 180=S, 270=W).
+        panel_tilt: Panel tilt from horizontal in degrees (0=flat, 90=vertical).
+        panel_azimuth: Panel facing direction in degrees (180=south).
+
+    Returns:
+        POA factor (typically 1.0-1.5 for well-oriented panels).
+    """
+    import math
+
+    if sun_elevation <= 0:
+        return 0.0
+
+    sun_el_rad = math.radians(sun_elevation)
+    sun_az_rad = math.radians(sun_azimuth)
+    tilt_rad = math.radians(panel_tilt)
+    panel_az_rad = math.radians(panel_azimuth)
+
+    # Cosine of angle of incidence on tilted surface
+    cos_incidence = (
+        math.sin(sun_el_rad) * math.cos(tilt_rad)
+        + math.cos(sun_el_rad) * math.sin(tilt_rad)
+        * math.cos(sun_az_rad - panel_az_rad)
+    )
+
+    # Cosine of zenith angle (= sin of elevation)
+    sin_elevation = math.sin(sun_el_rad)
+
+    if sin_elevation <= 0.01:
+        return 0.0
+
+    # Direct component ratio
+    direct_factor = max(0.0, cos_incidence / sin_elevation)
+
+    # Diffuse component: isotropic model (view factor of tilted surface to sky)
+    diffuse_factor = (1.0 + math.cos(tilt_rad)) / 2.0
+
+    # Typical split: ~70% direct, ~30% diffuse (varies with clouds)
+    poa_factor = direct_factor * 0.7 + diffuse_factor * 0.3
+
+    # Clamp to reasonable range
+    return max(0.0, min(poa_factor, 3.0))
+
+
 def estimate_pv_power(
     sun_percent: float,
     solar_radiation: float | None,
     cloud_coverage: float | None = None,
     panel_capacity_wp: float = 5000.0,
-    tilt_factor: float = 1.2,
+    poa_factor: float = 1.2,
     system_losses: float = 0.08,
 ) -> float | None:
     """Estimate PV power output combining shade analysis with solar radiation.
@@ -273,14 +326,9 @@ def estimate_pv_power(
         sun_percent: Percentage of direct sunlight on the PV zone (0-100).
         solar_radiation: Measured global horizontal radiation in W/m² from ARSO.
         cloud_coverage: Cloud coverage percentage (0-100) from ARSO.
-            Used as fallback when solar_radiation is unavailable.
         panel_capacity_wp: Installed PV capacity in Wp.
-        tilt_factor: Correction for tilted panels vs horizontal sensor.
-            Tilted panels (~30°) receive more radiation than horizontal.
-            Default 1.2 (~20% gain, typical for Slovenia at ~46°N).
+        poa_factor: Plane-of-array factor from compute_poa_factor().
         system_losses: System losses (inverter, wiring, temperature) as fraction.
-            Default 0.08 (8%) for systems with optimizers (SolarEdge, Enphase).
-            Use 0.14 for string inverters without optimizers.
 
     Returns:
         Estimated power output in Watts, or None if no data.
@@ -291,21 +339,20 @@ def estimate_pv_power(
     sun_fraction = sun_percent / 100.0
 
     if solar_radiation is not None and solar_radiation > 0:
-        # ARSO measures global horizontal irradiance (GHI).
-        # Tilted panels receive more radiation — apply tilt correction.
-        tilted_radiation = solar_radiation * tilt_factor
+        # Apply POA correction: tilted panels vs horizontal measurement
+        poa_radiation = solar_radiation * poa_factor
 
-        # Shade adjustment: in shade, only diffuse component reaches panels (~20%)
-        effective_radiation = tilted_radiation * (sun_fraction * 0.8 + 0.2)
+        # Shade adjustment: in shade, only diffuse reaches panels (~20%)
+        effective_radiation = poa_radiation * (sun_fraction * 0.8 + 0.2)
 
         # Standard test conditions: 1000 W/m²
         power = panel_capacity_wp * (effective_radiation / 1000.0) * (1 - system_losses)
         return round(max(0.0, power), 1)
 
-    # Fallback: estimate from cloud coverage (rough approximation)
+    # Fallback: estimate from cloud coverage
     if cloud_coverage is not None:
         cloud_factor = 1.0 - (cloud_coverage / 100.0) * 0.75
-        estimated_radiation = 800.0 * cloud_factor * tilt_factor
+        estimated_radiation = 800.0 * cloud_factor * poa_factor
         effective_radiation = estimated_radiation * (sun_fraction * 0.8 + 0.2)
         power = panel_capacity_wp * (effective_radiation / 1000.0) * (1 - system_losses)
         return round(max(0.0, power), 1)

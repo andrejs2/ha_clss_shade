@@ -23,11 +23,13 @@ from .clss_data.slovenian_downloader import (
 from .const import (
     CONF_CUSTOM_ZONES,
     CONF_INCLUDE_NEIGHBORS,
+    CONF_PV_PANEL_AZIMUTH,
+    CONF_PV_PANEL_TILT,
     CONF_PV_REAL_ENTITY,
-    CONF_PV_TILT_FACTOR,
     CONF_PV_ZONES_CONFIG,
     CONF_RADIUS,
-    DEFAULT_PV_TILT_FACTOR,
+    DEFAULT_PV_PANEL_AZIMUTH,
+    DEFAULT_PV_PANEL_TILT,
     DATA_DIR_NAME,
     DEFAULT_RADIUS_M,
     DEFAULT_UPDATE_INTERVAL_MIN,
@@ -41,6 +43,7 @@ from .shadow_engine import (
 )
 from .weather_bridge import (
     ArsoWeatherData,
+    compute_poa_factor,
     estimate_irrigation_need,
     estimate_pv_power,
     find_arso_entities,
@@ -103,7 +106,8 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
         self._pv_zones_config = self._parse_pv_config(
             entry.options.get(CONF_PV_ZONES_CONFIG, "")
         )
-        self._pv_tilt_factor: float = entry.options.get(CONF_PV_TILT_FACTOR, DEFAULT_PV_TILT_FACTOR)
+        self._pv_panel_tilt: float = entry.options.get(CONF_PV_PANEL_TILT, DEFAULT_PV_PANEL_TILT)
+        self._pv_panel_azimuth: float = entry.options.get(CONF_PV_PANEL_AZIMUTH, DEFAULT_PV_PANEL_AZIMUTH)
         self._pv_real_entity: str = entry.options.get(CONF_PV_REAL_ENTITY, "")
 
         # Data directory for this entry
@@ -219,11 +223,18 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
         zone_data: dict[str, ZoneData],
         mean_sun: float,
         weather: ArsoWeatherData,
+        sun: SunPosition | None = None,
     ) -> float | None:
         """Calculate total PV estimate from per-zone capacities."""
         pv_config = self._pv_zones_config
 
-        tilt = self._pv_tilt_factor
+        # Compute dynamic POA factor from current sun position + panel orientation
+        poa = compute_poa_factor(
+            sun_elevation=sun.elevation if sun else 45.0,
+            sun_azimuth=sun.azimuth if sun else 180.0,
+            panel_tilt=self._pv_panel_tilt,
+            panel_azimuth=self._pv_panel_azimuth,
+        )
 
         if not pv_config:
             roof_sun = zone_data["roof"].sun_percent if "roof" in zone_data else mean_sun
@@ -232,7 +243,7 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
                 solar_radiation=weather.solar_radiation,
                 cloud_coverage=weather.cloud_coverage,
                 panel_capacity_wp=5000.0,
-                tilt_factor=tilt,
+                poa_factor=poa,
             )
 
         total_power = 0.0
@@ -246,7 +257,7 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
                 solar_radiation=weather.solar_radiation,
                 cloud_coverage=weather.cloud_coverage,
                 panel_capacity_wp=cap,
-                tilt_factor=tilt,
+                poa_factor=poa,
             )
             if result is not None:
                 total_power += result
@@ -358,9 +369,9 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
             if self._arso_entities:
                 weather = read_arso_weather(self.hass, self._arso_entities)
 
-                # PV estimate — per-zone capacity
+                # PV estimate — per-zone capacity with POA
                 pv_estimate = self._calc_pv_estimate(
-                    zone_data, mean_sun, weather
+                    zone_data, mean_sun, weather, sun
                 )
 
                 # Irrigation estimate using garden zone shade

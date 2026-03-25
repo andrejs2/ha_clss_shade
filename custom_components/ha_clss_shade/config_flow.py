@@ -12,11 +12,13 @@ from homeassistant.const import CONF_LATITUDE, CONF_LONGITUDE, CONF_NAME
 from .const import (
     CONF_CUSTOM_ZONES,
     CONF_INCLUDE_NEIGHBORS,
+    CONF_PV_PANEL_AZIMUTH,
+    CONF_PV_PANEL_TILT,
     CONF_PV_REAL_ENTITY,
-    CONF_PV_TILT_FACTOR,
     CONF_PV_ZONES_CONFIG,
     CONF_RADIUS,
-    DEFAULT_PV_TILT_FACTOR,
+    DEFAULT_PV_PANEL_AZIMUTH,
+    DEFAULT_PV_PANEL_TILT,
     DEFAULT_RADIUS_M,
     DOMAIN,
 )
@@ -134,7 +136,8 @@ class ClssShadeOptionsFlow(config_entries.OptionsFlow):
                 CONF_RADIUS: user_input.get(CONF_RADIUS, DEFAULT_RADIUS_M),
                 CONF_INCLUDE_NEIGHBORS: user_input.get(CONF_INCLUDE_NEIGHBORS, False),
                 CONF_PV_ZONES_CONFIG: user_input.get(CONF_PV_ZONES_CONFIG, ""),
-                CONF_PV_TILT_FACTOR: user_input.get(CONF_PV_TILT_FACTOR, DEFAULT_PV_TILT_FACTOR),
+                CONF_PV_PANEL_TILT: user_input.get(CONF_PV_PANEL_TILT, DEFAULT_PV_PANEL_TILT),
+                CONF_PV_PANEL_AZIMUTH: user_input.get(CONF_PV_PANEL_AZIMUTH, DEFAULT_PV_PANEL_AZIMUTH),
                 CONF_PV_REAL_ENTITY: user_input.get(CONF_PV_REAL_ENTITY, ""),
                 CONF_CUSTOM_ZONES: list(
                     self._config_entry.options.get(CONF_CUSTOM_ZONES, [])
@@ -196,10 +199,16 @@ class ClssShadeOptionsFlow(config_entries.OptionsFlow):
                         default=current.get(CONF_PV_ZONES_CONFIG, ""),
                     ): str,
                     vol.Optional(
-                        CONF_PV_TILT_FACTOR,
-                        default=current.get(CONF_PV_TILT_FACTOR, DEFAULT_PV_TILT_FACTOR),
+                        CONF_PV_PANEL_TILT,
+                        default=current.get(CONF_PV_PANEL_TILT, DEFAULT_PV_PANEL_TILT),
                     ): vol.All(
-                        vol.Coerce(float), vol.Range(min=0.5, max=2.0)
+                        vol.Coerce(int), vol.Range(min=0, max=90)
+                    ),
+                    vol.Optional(
+                        CONF_PV_PANEL_AZIMUTH,
+                        default=current.get(CONF_PV_PANEL_AZIMUTH, DEFAULT_PV_PANEL_AZIMUTH),
+                    ): vol.All(
+                        vol.Coerce(int), vol.Range(min=0, max=360)
                     ),
                     vol.Optional(
                         CONF_PV_REAL_ENTITY,

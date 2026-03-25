@@ -56,9 +56,11 @@ CONF_PV_CAPACITY_WP = "pv_capacity_wp"
 CONF_PV_ZONE = "pv_zone"
 CONF_PV_ZONES_CONFIG = "pv_zones_config"
 CONF_PV_REAL_ENTITY = "pv_real_entity"
-CONF_PV_TILT_FACTOR = "pv_tilt_factor"
+CONF_PV_PANEL_TILT = "pv_panel_tilt"
+CONF_PV_PANEL_AZIMUTH = "pv_panel_azimuth"
 DEFAULT_PV_CAPACITY_WP = 5000
-DEFAULT_PV_TILT_FACTOR = 1.2
+DEFAULT_PV_PANEL_TILT = 30  # degrees from horizontal
+DEFAULT_PV_PANEL_AZIMUTH = 180  # degrees, 180 = south
 
 # Data storage
 DATA_DIR_NAME = "clss_shade"

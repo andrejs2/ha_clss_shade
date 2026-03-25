@@ -29,7 +29,8 @@
           "radius": "Radij analize (metri)",
           "include_neighbors": "Vkljuci sosednje ploscice (3x3 km)",
           "pv_zones_config": "PV cone in kapaciteta (cona:Wp, npr. pv_visja:5000,pv_nizja:6000)",
-          "pv_tilt_factor": "Faktor nagiba panelov (1.0=ravno, 1.2=30° nagib, 1.35=optimalen zima)",
+          "pv_panel_tilt": "Nagib panelov v stopinjah (0=ravno, 30=tipicno, 90=navpicno)",
+          "pv_panel_azimuth": "Azimut panelov v stopinjah (0=sever, 90=vzhod, 180=jug, 270=zahod)",
           "pv_real_entity": "Realna PV moc senzor (opcijsko, npr. sensor.solaredge_current_power)",
           "zone_action": "Upravljanje con"
         }

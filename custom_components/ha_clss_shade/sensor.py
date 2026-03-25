@@ -218,10 +218,12 @@ class ClssShadeSensor(CoordinatorEntity[ClssShadeCoordinator], SensorEntity):
 
         if key == "pv_power_estimate":
             pv_config_str = self.coordinator.config_entry.options.get("pv_zones_config", "")
-            tilt = self.coordinator.config_entry.options.get("pv_tilt_factor", 1.2)
+            panel_tilt = self.coordinator.config_entry.options.get("pv_panel_tilt", 30)
+            panel_azimuth = self.coordinator.config_entry.options.get("pv_panel_azimuth", 180)
             attrs = {
                 "pv_config": pv_config_str or "roof:5000 (privzeto)",
-                "tilt_factor": tilt,
+                "panel_tilt_deg": panel_tilt,
+                "panel_azimuth_deg": panel_azimuth,
             }
             if data.weather:
                 attrs["solar_radiation_wm2"] = data.weather.solar_radiation
