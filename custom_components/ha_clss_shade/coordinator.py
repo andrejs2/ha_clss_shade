@@ -23,11 +23,9 @@ from .clss_data.slovenian_downloader import (
 from .const import (
     CONF_CUSTOM_ZONES,
     CONF_INCLUDE_NEIGHBORS,
-    CONF_PV_CAPACITY_WP,
-    CONF_PV_ZONE,
+    CONF_PV_ZONES_CONFIG,
     CONF_RADIUS,
     DATA_DIR_NAME,
-    DEFAULT_PV_CAPACITY_WP,
     DEFAULT_RADIUS_M,
     DEFAULT_UPDATE_INTERVAL_MIN,
     DOMAIN,
@@ -97,8 +95,9 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
         self._lon: float = entry.data[CONF_LONGITUDE]
         self._radius: float = entry.options.get(CONF_RADIUS, DEFAULT_RADIUS_M)
         self._include_neighbors: bool = entry.options.get(CONF_INCLUDE_NEIGHBORS, False)
-        self._pv_capacity_wp: float = entry.options.get(CONF_PV_CAPACITY_WP, DEFAULT_PV_CAPACITY_WP)
-        self._pv_zone: str = entry.options.get(CONF_PV_ZONE, "roof")
+        self._pv_zones_config = self._parse_pv_config(
+            entry.options.get(CONF_PV_ZONES_CONFIG, "")
+        )
 
         # Data directory for this entry
         self._data_dir = Path(hass.config.path(DATA_DIR_NAME, entry.entry_id))
@@ -208,23 +207,70 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
         # Discover ARSO weather entities
         self._arso_entities = find_arso_entities(self.hass)
 
-    @staticmethod
-    def _calc_pv_sun(
-        zone_names: list[str],
+    def _calc_pv_estimate(
+        self,
         zone_data: dict[str, ZoneData],
-        fallback: float,
-    ) -> float:
-        """Calculate area-weighted sun% across multiple PV zones."""
-        total_area = 0.0
-        weighted_sun = 0.0
-        for name in zone_names:
-            zd = zone_data.get(name)
-            if zd and zd.area_m2 > 0:
-                weighted_sun += zd.sun_percent * zd.area_m2
-                total_area += zd.area_m2
-        if total_area > 0:
-            return weighted_sun / total_area
-        return fallback
+        mean_sun: float,
+        weather: ArsoWeatherData,
+    ) -> float | None:
+        """Calculate total PV estimate from per-zone capacities."""
+        pv_config = self._pv_zones_config
+
+        if not pv_config:
+            # No PV configured — use old behavior (roof, 5kW default)
+            roof_sun = zone_data["roof"].sun_percent if "roof" in zone_data else mean_sun
+            return estimate_pv_power(
+                sun_percent=roof_sun,
+                solar_radiation=weather.solar_radiation,
+                cloud_coverage=weather.cloud_coverage,
+                panel_capacity_wp=5000.0,
+            )
+
+        total_power = 0.0
+        any_result = False
+
+        for zone_name, capacity_wp in pv_config.items():
+            sun_pct = zone_data[zone_name].sun_percent if zone_name in zone_data else mean_sun
+            cap = capacity_wp if capacity_wp > 0 else 5000
+            result = estimate_pv_power(
+                sun_percent=sun_pct,
+                solar_radiation=weather.solar_radiation,
+                cloud_coverage=weather.cloud_coverage,
+                panel_capacity_wp=cap,
+            )
+            if result is not None:
+                total_power += result
+                any_result = True
+
+        return round(total_power, 1) if any_result else None
+
+    @staticmethod
+    def _parse_pv_config(config_str: str) -> dict[str, int]:
+        """Parse PV zones config string into {zone_name: capacity_wp}.
+
+        Format: "pv_visja:5000, pv_nizja:6000"
+        Fallback for old format: "roof" or "pv_visja,pv_nizja" (uses 0 = auto)
+        """
+        result = {}
+        if not config_str or not config_str.strip():
+            return result
+
+        for part in config_str.split(","):
+            part = part.strip()
+            if not part:
+                continue
+            if ":" in part:
+                name, cap_str = part.split(":", 1)
+                name = name.strip()
+                try:
+                    cap = int(cap_str.strip())
+                except ValueError:
+                    cap = 0
+                result[name] = cap
+            else:
+                # Old format: just zone name, no capacity
+                result[part.strip()] = 0
+        return result
 
     def _create_custom_zone(self, zconf: dict):
         """Create a custom zone from config dict (runs in executor)."""
@@ -302,14 +348,9 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
             if self._arso_entities:
                 weather = read_arso_weather(self.hass, self._arso_entities)
 
-                # PV estimate — supports multiple zones (comma-separated)
-                pv_zone_names = [z.strip() for z in self._pv_zone.split(",") if z.strip()]
-                pv_sun = self._calc_pv_sun(pv_zone_names, zone_data, mean_sun)
-                pv_estimate = estimate_pv_power(
-                    sun_percent=pv_sun,
-                    solar_radiation=weather.solar_radiation,
-                    cloud_coverage=weather.cloud_coverage,
-                    panel_capacity_wp=self._pv_capacity_wp,
+                # PV estimate — per-zone capacity
+                pv_estimate = self._calc_pv_estimate(
+                    zone_data, mean_sun, weather
                 )
 
                 # Irrigation estimate using garden zone shade

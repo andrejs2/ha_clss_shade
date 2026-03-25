@@ -54,6 +54,7 @@ CONF_INCLUDE_NEIGHBORS = "include_neighbors"
 CONF_CUSTOM_ZONES = "custom_zones"
 CONF_PV_CAPACITY_WP = "pv_capacity_wp"
 CONF_PV_ZONE = "pv_zone"
+CONF_PV_ZONES_CONFIG = "pv_zones_config"
 DEFAULT_PV_CAPACITY_WP = 5000
 
 # Data storage
