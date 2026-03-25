@@ -28,8 +28,8 @@
         "data": {
           "radius": "Analysis radius (meters)",
           "include_neighbors": "Include neighboring tiles (3x3 km)",
-          "pv_capacity_wp": "PV system capacity (Wp)",
-          "pv_zone": "PV zone (zone name for sun% calculation)",
+          "pv_capacity_wp": "PV system capacity (Wp, e.g. 11000)",
+          "pv_zone": "PV zone(s) — comma-separated (e.g. pv_upper,pv_lower)",
           "zone_action": "Zone management"
         }
       },

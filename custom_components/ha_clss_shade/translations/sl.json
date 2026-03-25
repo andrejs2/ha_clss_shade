@@ -28,8 +28,8 @@
         "data": {
           "radius": "Radij analize (metri)",
           "include_neighbors": "Vkljuci sosednje ploscice (3x3 km)",
-          "pv_capacity_wp": "Kapaciteta PV sistema (Wp)",
-          "pv_zone": "PV cona (ime cone za izracun sonce%)",
+          "pv_capacity_wp": "Kapaciteta PV sistema (Wp, npr. 11000)",
+          "pv_zone": "PV cone — locene z vejico (npr. pv_visja,pv_nizja)",
           "zone_action": "Upravljanje con"
         }
       },

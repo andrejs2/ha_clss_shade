@@ -208,6 +208,24 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
         # Discover ARSO weather entities
         self._arso_entities = find_arso_entities(self.hass)
 
+    @staticmethod
+    def _calc_pv_sun(
+        zone_names: list[str],
+        zone_data: dict[str, ZoneData],
+        fallback: float,
+    ) -> float:
+        """Calculate area-weighted sun% across multiple PV zones."""
+        total_area = 0.0
+        weighted_sun = 0.0
+        for name in zone_names:
+            zd = zone_data.get(name)
+            if zd and zd.area_m2 > 0:
+                weighted_sun += zd.sun_percent * zd.area_m2
+                total_area += zd.area_m2
+        if total_area > 0:
+            return weighted_sun / total_area
+        return fallback
+
     def _create_custom_zone(self, zconf: dict):
         """Create a custom zone from config dict (runs in executor)."""
         shape = zconf.get("shape", "circle")
@@ -284,9 +302,9 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
             if self._arso_entities:
                 weather = read_arso_weather(self.hass, self._arso_entities)
 
-                # PV estimate using configured zone (default: roof)
-                pv_zone = self._pv_zone
-                pv_sun = zone_data[pv_zone].sun_percent if pv_zone in zone_data else mean_sun
+                # PV estimate — supports multiple zones (comma-separated)
+                pv_zone_names = [z.strip() for z in self._pv_zone.split(",") if z.strip()]
+                pv_sun = self._calc_pv_sun(pv_zone_names, zone_data, mean_sun)
                 pv_estimate = estimate_pv_power(
                     sun_percent=pv_sun,
                     solar_radiation=weather.solar_radiation,
