@@ -104,7 +104,54 @@ v Home Assistant instanci.
 
 Preostane:
 - Testiranje v pravi HA instanci
-- Dopolnitev con (rocne cone prek config flow)
-- Frontend panel (opcijsko)
+- ~~Dopolnitev con (rocne cone prek config flow)~~ DONE
+- ~~Frontend panel (opcijsko)~~ DONE
 - Objava: HACS default repo, brands submission
 - Screenshots za README
+
+---
+
+## Seja 2 — 2026-03-25
+
+### Povzetek
+Prva realna namestitev na HA. Analiza logov, popravki bugov, implementacija
+interaktivnega Zone Editor panela s karto, agrometeo integracija, oblacnost senzor.
+
+### Narejeno
+- **Analiza HA loga**: identificirani blocking I/O bugi v downloader-ju, vse ostalo OK
+- **Blocking I/O fix**: `_save_block_cache()` in file write z `run_in_executor`
+- **Custom zone support (poligoni + krogi)**:
+  - `zones.py`: `create_polygon_zone()` z ray-casting rasterizacijo, `parse_vertices()`, podpora za lat/lng
+  - `config_flow.py`: options flow za dodajanje/brisanje con (poligon ali krog)
+  - `coordinator.py`: nalaganje custom con iz config entry options
+- **Interaktivni Zone Editor panel** (frontend/panel.html):
+  - Leaflet + Leaflet.draw v iframe panelu v HA stranski vrstici
+  - Risanje poligonov in pravokotnikov na satelitski karti
+  - Dialog za ime, tip, barvo cone ob risanju
+  - Urejanje oglisc, brisanje, zoom na cono
+  - WebSocket API (websocket_api.py): get_config / save_zones
+  - Vec iteracij: vertex markerji (rdece pike), toolbar ikone, dark theme
+  - Vec kartografskih slojev: Google Satellite, Google Hybrid, Esri, OSM (layer switcher)
+  - Stabilni zone ID-ji (name-based namesto index-based) — cone se ne mesajo vec
+- **Agrometeo izboljsave**:
+  - Branje iz overview senzorja `dnevi` atribut (multi-day napoved)
+  - Prioriteta: danes meritev > danes napoved > zadnja napoved > fallback
+  - Dinamicno iskanje overview senzorja ob vsakem update ciklu
+  - Irrigation senzor prikazuje napoved po dnevih v atributih
+- **Oblacnost senzor**: nov `cloud_coverage` senzor iz ARSO weather
+- **PV ocena z oblacnostjo**: fallback ko ni merjenega sevanja (clear sky ~800 W/m2)
+- **HACS/hassfest popravki**: manifest key order, hacs.json, brand icon
+- **README.md**: fasadne cone avtomatizacija (5 primerov), Zone Editor docs, oblacnost
+- **18 commitov** pushanih (c50cd6b → 98f912f)
+
+### Odprta vprasanja
+- GURS DOF WMS ne dela (napacni parametri ali ni javno dostopen)
+- Agrometeo: preveriti ali `needs_po_zalivanju` pravilno deluje z novimi podatki
+- Panel: mogoce dodati 3D pogled v prihodnosti (kot clss.si pregledovalnik)
+
+### Naslednji koraki
+- Testirati agrometeo senzor po osvezitvi podatkov (~10:00)
+- Zarisati fasadne cone za avtomatizacijo zaluzij
+- Repo narediti public za HACS validacijo
+- Screenshots za README
+- Objaviti na HACS default repo
