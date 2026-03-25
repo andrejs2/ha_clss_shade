@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import date, datetime
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -13,9 +14,23 @@ _LOGGER = logging.getLogger(__name__)
 
 # Entity ID patterns from slovenian_weather_integration
 # Weather sensors: sensor.arso_weather_{location}_{sensor_name}
-# Agrometeo sensors: sensor.arso_agrometeo_{station}_{field}
+# Agrometeo overview: sensor.arso_agrometeo_{station} (has 'dnevi' attribute)
+# Agrometeo value: sensor.arso_agrometeo_{station}_{field}
 
 ARSO_DOMAIN = "slovenian_weather_integration"
+
+
+@dataclass
+class AgroDayData:
+    """Single day of agrometeo data."""
+
+    datum: str = ""
+    tip: str = ""  # "meritev", "danes", "napoved"
+    evapotranspiracija_mm: float | None = None
+    vodna_bilanca_mm: float | None = None
+    padavine_24h_mm: float | None = None
+    povprecna_temperatura_C: float | None = None
+    trajanje_sonca_h: float | None = None
 
 
 @dataclass
@@ -27,9 +42,12 @@ class ArsoWeatherData:
     cloud_coverage: float | None = None  # %
     temperature: float | None = None  # °C
     humidity: float | None = None  # %
-    evapotranspiration: float | None = None  # mm
-    water_balance: float | None = None  # mm
+    evapotranspiration: float | None = None  # mm (today or best available)
+    water_balance: float | None = None  # mm (today or best available)
     precipitation_forecast: float | None = None  # mm
+    # Multi-day agrometeo data for attributes
+    agro_days: list[AgroDayData] = field(default_factory=list)
+    agro_source: str = ""  # "meritev", "napoved", etc.
 
 
 def find_arso_entities(hass: HomeAssistant) -> dict[str, str]:
@@ -41,15 +59,13 @@ def find_arso_entities(hass: HomeAssistant) -> dict[str, str]:
     found: dict[str, str] = {}
     states = hass.states.async_all("sensor")
 
-    # Patterns to search for (Slovenian sensor names)
-    patterns = {
+    # Weather sensor patterns (Slovenian names)
+    weather_patterns = {
         "solar_radiation": "globalno_soncno_sevanje",
         "diffuse_radiation": "difuzno_soncno_sevanje",
         "cloud_coverage": "oblacnost",
         "temperature": "temperatura",
         "humidity": "relativna_vlaznost",
-        "evapotranspiration": "evapotranspiracija",
-        "water_balance": "vodna_bilanca",
     }
 
     for state in states:
@@ -57,10 +73,23 @@ def find_arso_entities(hass: HomeAssistant) -> dict[str, str]:
         if "arso" not in eid:
             continue
 
-        for key, pattern in patterns.items():
+        # Weather sensors
+        for key, pattern in weather_patterns.items():
             if pattern in eid and key not in found:
                 found[key] = eid
-                _LOGGER.debug("Found ARSO entity: %s -> %s", key, eid)
+
+        # Agrometeo overview sensor (has 'dnevi' attribute)
+        if "arso_agrometeo_" in eid and "agrometeo_overview" not in found:
+            attrs = state.attributes or {}
+            if "dnevi" in attrs:
+                found["agrometeo_overview"] = eid
+                _LOGGER.debug("Found agrometeo overview: %s", eid)
+
+        # Fallback: individual agrometeo value sensors
+        if "evapotranspiracija" in eid and "evapotranspiration" not in found:
+            found["evapotranspiration"] = eid
+        if "vodna_bilanca" in eid and "water_balance" not in found:
+            found["water_balance"] = eid
 
     if found:
         _LOGGER.info("Found %d ARSO weather entities", len(found))
@@ -70,32 +99,146 @@ def find_arso_entities(hass: HomeAssistant) -> dict[str, str]:
     return found
 
 
+def _parse_agro_days(dnevi: list[dict]) -> list[AgroDayData]:
+    """Parse the 'dnevi' attribute array into AgroDayData objects."""
+    result = []
+    for day in dnevi:
+        if not isinstance(day, dict):
+            continue
+        result.append(
+            AgroDayData(
+                datum=day.get("datum", ""),
+                tip=day.get("tip", ""),
+                evapotranspiracija_mm=_safe_float(day.get("evapotranspiracija_mm")),
+                vodna_bilanca_mm=_safe_float(day.get("vodna_bilanca_mm")),
+                padavine_24h_mm=_safe_float(day.get("padavine_24h_mm")),
+                povprecna_temperatura_C=_safe_float(day.get("povprecna_temperatura_C")),
+                trajanje_sonca_h=_safe_float(day.get("trajanje_sonca_h")),
+            )
+        )
+    return result
+
+
+def _safe_float(val: Any) -> float | None:
+    """Convert to float or return None."""
+    if val is None:
+        return None
+    try:
+        return float(val)
+    except (ValueError, TypeError):
+        return None
+
+
+def _find_best_agro_day(
+    days: list[AgroDayData], target_date: str
+) -> tuple[AgroDayData | None, str]:
+    """Find the best agrometeo day data.
+
+    Priority:
+    1. Today's measurement ("danes" or matching date with "meritev")
+    2. Today's forecast (matching date with "napoved")
+    3. Most recent forecast
+    4. Most recent measurement
+
+    Returns:
+        Tuple of (day_data, source_description).
+    """
+    today_measurement = None
+    today_forecast = None
+    latest_forecast = None
+    latest_measurement = None
+
+    for day in days:
+        is_today = day.datum == target_date
+        has_etp = day.evapotranspiracija_mm is not None
+
+        if not has_etp:
+            continue
+
+        if day.tip == "danes" or (is_today and day.tip == "meritev"):
+            today_measurement = day
+        elif is_today and day.tip == "napoved":
+            today_forecast = day
+        elif day.tip == "napoved":
+            latest_forecast = day  # last one wins (they're chronological)
+        elif day.tip == "meritev":
+            latest_measurement = day
+
+    if today_measurement:
+        return today_measurement, f"meritev ({target_date})"
+    if today_forecast:
+        return today_forecast, f"napoved ({target_date})"
+    if latest_forecast:
+        return latest_forecast, f"napoved ({latest_forecast.datum})"
+    if latest_measurement:
+        return latest_measurement, f"meritev ({latest_measurement.datum})"
+
+    return None, ""
+
+
 def read_arso_weather(
     hass: HomeAssistant,
     entity_map: dict[str, str],
 ) -> ArsoWeatherData:
     """Read current values from ARSO weather entities.
 
-    Args:
-        hass: Home Assistant instance.
-        entity_map: Mapping from data type to entity_id
-            (from find_arso_entities).
-
-    Returns:
-        ArsoWeatherData with available values.
+    Reads weather sensors directly and agrometeo data from the
+    overview sensor's 'dnevi' attribute for multi-day data.
     """
     data = ArsoWeatherData()
+    today_str = date.today().isoformat()
 
-    for key, entity_id in entity_map.items():
+    # Read weather sensors (radiation, temperature, etc.)
+    for key in ("solar_radiation", "diffuse_radiation", "cloud_coverage",
+                "temperature", "humidity"):
+        entity_id = entity_map.get(key)
+        if not entity_id:
+            continue
         state = hass.states.get(entity_id)
         if state is None or state.state in ("unknown", "unavailable"):
             continue
+        val = _safe_float(state.state)
+        if val is not None:
+            setattr(data, key, val)
 
-        try:
-            value = float(state.state)
-            setattr(data, key, value)
-        except (ValueError, TypeError):
-            _LOGGER.debug("Could not parse %s state: %s", entity_id, state.state)
+    # Read agrometeo from overview sensor 'dnevi' attribute
+    overview_id = entity_map.get("agrometeo_overview")
+    if overview_id:
+        state = hass.states.get(overview_id)
+        if state and state.attributes:
+            dnevi = state.attributes.get("dnevi", [])
+            if isinstance(dnevi, list) and dnevi:
+                agro_days = _parse_agro_days(dnevi)
+                data.agro_days = agro_days
+
+                best_day, source = _find_best_agro_day(agro_days, today_str)
+                if best_day:
+                    data.evapotranspiration = best_day.evapotranspiracija_mm
+                    data.water_balance = best_day.vodna_bilanca_mm
+                    data.precipitation_forecast = best_day.padavine_24h_mm
+                    data.agro_source = source
+                    _LOGGER.debug(
+                        "Agrometeo data from %s: ETP=%.1f, wBal=%.1f",
+                        source,
+                        best_day.evapotranspiracija_mm or 0,
+                        best_day.vodna_bilanca_mm or 0,
+                    )
+
+    # Fallback: read individual agrometeo value sensors
+    if data.evapotranspiration is None:
+        eid = entity_map.get("evapotranspiration")
+        if eid:
+            state = hass.states.get(eid)
+            if state and state.state not in ("unknown", "unavailable"):
+                data.evapotranspiration = _safe_float(state.state)
+                data.agro_source = "value_sensor"
+
+    if data.water_balance is None:
+        eid = entity_map.get("water_balance")
+        if eid:
+            state = hass.states.get(eid)
+            if state and state.state not in ("unknown", "unavailable"):
+                data.water_balance = _safe_float(state.state)
 
     return data
 

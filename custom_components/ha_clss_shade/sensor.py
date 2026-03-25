@@ -203,12 +203,24 @@ class ClssShadeSensor(CoordinatorEntity[ClssShadeCoordinator], SensorEntity):
             }
 
         if key == "irrigation_need" and data.weather:
-            return {
+            attrs = {
                 "evapotranspiration_mm": data.weather.evapotranspiration,
                 "water_balance_mm": data.weather.water_balance,
+                "vir_podatkov": data.weather.agro_source or "ni podatkov",
                 "garden_shade_percent": data.zones.get("garden", None)
                 and data.zones["garden"].shade_percent,
             }
+            # Add multi-day agrometeo forecast
+            for day in data.weather.agro_days:
+                if day.evapotranspiracija_mm is not None:
+                    prefix = day.datum or "?"
+                    attrs[f"{prefix}_etp_mm"] = day.evapotranspiracija_mm
+                    if day.vodna_bilanca_mm is not None:
+                        attrs[f"{prefix}_bilanca_mm"] = day.vodna_bilanca_mm
+                    if day.padavine_24h_mm is not None:
+                        attrs[f"{prefix}_padavine_mm"] = day.padavine_24h_mm
+                    attrs[f"{prefix}_tip"] = day.tip
+            return attrs
 
         return None
 
