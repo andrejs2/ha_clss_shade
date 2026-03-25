@@ -176,6 +176,28 @@ def _find_best_agro_day(
     return None, ""
 
 
+def _find_agrometeo_overview(hass: HomeAssistant) -> tuple[list[AgroDayData], str]:
+    """Find and read agrometeo overview sensor with 'dnevi' attribute.
+
+    Scans all sensors every time to handle late-loading entities.
+    """
+    states = hass.states.async_all("sensor")
+    for state in states:
+        eid = state.entity_id
+        if "arso_agrometeo" not in eid:
+            continue
+        attrs = state.attributes or {}
+        dnevi = attrs.get("dnevi")
+        if not isinstance(dnevi, list) or not dnevi:
+            continue
+        agro_days = _parse_agro_days(dnevi)
+        if agro_days:
+            _LOGGER.debug("Read agrometeo from %s: %d days", eid, len(agro_days))
+            return agro_days, eid
+
+    return [], ""
+
+
 def read_arso_weather(
     hass: HomeAssistant,
     entity_map: dict[str, str],
@@ -201,28 +223,22 @@ def read_arso_weather(
         if val is not None:
             setattr(data, key, val)
 
-    # Read agrometeo from overview sensor 'dnevi' attribute
-    overview_id = entity_map.get("agrometeo_overview")
-    if overview_id:
-        state = hass.states.get(overview_id)
-        if state and state.attributes:
-            dnevi = state.attributes.get("dnevi", [])
-            if isinstance(dnevi, list) and dnevi:
-                agro_days = _parse_agro_days(dnevi)
-                data.agro_days = agro_days
-
-                best_day, source = _find_best_agro_day(agro_days, today_str)
-                if best_day:
-                    data.evapotranspiration = best_day.evapotranspiracija_mm
-                    data.water_balance = best_day.vodna_bilanca_mm
-                    data.precipitation_forecast = best_day.padavine_24h_mm
-                    data.agro_source = source
-                    _LOGGER.debug(
-                        "Agrometeo data from %s: ETP=%.1f, wBal=%.1f",
-                        source,
-                        best_day.evapotranspiracija_mm or 0,
-                        best_day.vodna_bilanca_mm or 0,
-                    )
+    # Read agrometeo: scan for overview sensor every time (handles late loading)
+    agro_days, overview_eid = _find_agrometeo_overview(hass)
+    if agro_days:
+        data.agro_days = agro_days
+        best_day, source = _find_best_agro_day(agro_days, today_str)
+        if best_day:
+            data.evapotranspiration = best_day.evapotranspiracija_mm
+            data.water_balance = best_day.vodna_bilanca_mm
+            data.precipitation_forecast = best_day.padavine_24h_mm
+            data.agro_source = source
+            _LOGGER.debug(
+                "Agrometeo [%s] %s: ETP=%.1f, wBal=%.1f",
+                overview_eid, source,
+                best_day.evapotranspiracija_mm or 0,
+                best_day.vodna_bilanca_mm or 0,
+            )
 
     # Fallback: read individual agrometeo value sensors
     if data.evapotranspiration is None:
