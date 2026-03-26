@@ -325,17 +325,65 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
         now = datetime.now(tz=timezone.utc)
         sun = compute_sun_position(self._lat, self._lon, now)
 
-        # Night time — return minimal data
-        if self._site is None or not sun.is_above_horizon:
+        # Site model not loaded yet
+        if self._site is None:
+            return ClssShadeData(
+                shadow=None,
+                sun=sun,
+                site=None,
+                shade_percent=0.0,
+                sun_percent=100.0,
+                sun_elevation=round(sun.elevation, 1),
+                sun_azimuth=round(sun.azimuth, 1),
+                is_day=sun.is_above_horizon,
+            )
+
+        # Night time — no shadow computation, but return sensible values
+        if not sun.is_above_horizon:
+            # Zone data: all zones 100% shade at night
+            zone_data: dict[str, ZoneData] = {}
+            if self._zones:
+                res2 = self._site.resolution ** 2
+                for name in self._zones.names:
+                    zone = self._zones.get(name)
+                    if zone and zone.cell_count > 0:
+                        zone_data[name] = ZoneData(
+                            shade_percent=100.0,
+                            sun_percent=0.0,
+                            area_m2=round(zone.cell_count * res2, 1),
+                            cell_count=zone.cell_count,
+                        )
+
+            # Still read weather data (useful for cloud coverage, irrigation)
+            weather = None
+            irrigation = None
+            if self._arso_entities:
+                weather = read_arso_weather(self.hass, self._arso_entities)
+                if weather and "garden" in zone_data:
+                    garden = zone_data["garden"]
+                    irrigation = estimate_irrigation_need(
+                        shade_percent=garden.shade_percent,
+                        evapotranspiration=weather.evapotranspiration,
+                        water_balance=weather.water_balance,
+                        precipitation_forecast=weather.precipitation_forecast,
+                        area_m2=garden.area_m2,
+                    )
+
             return ClssShadeData(
                 shadow=None,
                 sun=sun,
                 site=self._site,
-                shade_percent=100.0 if not sun.is_above_horizon else 0.0,
-                sun_percent=0.0 if not sun.is_above_horizon else 100.0,
+                shade_percent=100.0,
+                sun_percent=0.0,
                 sun_elevation=round(sun.elevation, 1),
                 sun_azimuth=round(sun.azimuth, 1),
-                is_day=sun.is_above_horizon,
+                is_day=False,
+                cloud_coverage=weather.cloud_coverage if weather else None,
+                zones=zone_data,
+                weather=weather,
+                pv_power_estimate=0.0,
+                pv_power_real=0.0,
+                irrigation_need=irrigation,
             )
 
         try:
