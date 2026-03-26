@@ -155,3 +155,81 @@ interaktivnega Zone Editor panela s karto, agrometeo integracija, oblacnost senz
 - Repo narediti public za HACS validacijo
 - Screenshots za README
 - Objaviti na HACS default repo
+
+---
+
+## Seja 3 — 2026-03-26
+
+### Povzetek
+PV napoved proizvodnje (Faza 3): shadow forecast + weather.get_forecasts + POA + EMA kalibracija.
+Razširitev na 5 dni, časovna okna, dashboard YAML. INCA nowcasting za lokacijsko sevanje.
+Popravki: senzorji ponoči, race condition, avalanche treeline bug.
+
+### Narejeno
+
+#### Popravki
+- **Senzorji ponoči**: ločen nighttime od site-not-loaded; ponoči zone=100% senca, PV=0, weather se bere
+- **Race condition**: lazy entity discovery za ARSO senzorje in weather entiteto (retry ob vsakem update)
+- **sensor state_class warning**: odstranjen `device_class=ENERGY` za forecast senzorje (nezdružljivo z MEASUREMENT)
+- **slovenian_weather_integration avalanche bug**: `int("treeline")` crash → PR #31
+
+#### PV napoved (forecast.py — nov modul)
+- `compute_shadow_forecast()`: shadow engine za prihodnje ure, per-zone sun% za vsak 30-min korak
+- `interpolate_weather()`: linearna interpolacija 3h ARSO napovedi na 30-min korake
+- `assemble_pv_forecast()`: shadow × cloud × POA × capacity × performance_factor = power/uro
+- `update_performance_ema()`: EMA kalibracija (alpha=0.1, samo ko sun_elevation > 10°)
+- `compute_time_windows()`: next 1h/3h Wh, rest-of-today kWh iz urnih podatkov
+- `ForecastData`: `days: list[PvForecastDay]` z backward-compatible `today`/`tomorrow` properties
+
+#### 5-dnevna napoved
+- Tiered intervali: dni 0-1 na 30 min (36 korakov), dni 2-4 na 60 min (18 korakov)
+- Skupaj ~2.7 min CPU v ozadju vsako uro
+- Smart caching: oddaljeni dnevi se re-uporabijo do 3 ure
+- Cache cleanup: avtomatska odstranitev zastarelih dni
+
+#### Novi senzorji (7 novih)
+- `pv_forecast_today_kwh` + `forecast_hourly` atribut za ApexCharts
+- `pv_forecast_tomorrow_kwh` + `forecast_hourly` atribut
+- `pv_forecast_next_hour_w`
+- `pv_forecast_5day_kwh` + `days` + `forecast_hourly_5day` atributi
+- `pv_forecast_next_1h_wh`, `pv_forecast_next_3h_wh`, `pv_forecast_rest_of_today_kwh`
+
+#### Weather forecast
+- `fetch_weather_forecast()`: klic HA `weather.get_forecasts` servisa (3h intervali, 6 dni)
+- `find_weather_entity()`: lazy discovery `weather.arso_*` entitete
+- Refresh vsake 30 min
+
+#### INCA nowcasting (inca_client.py — nov modul)
+- INCA si0zm: lokacijsko specifično sončno sevanje (GHI) na 1km gridu
+- PNG download (~50 KB) + pixel branje s Pillow
+- RGB → HSV hue → GHI W/m² (rainbow barvna skala)
+- Prioritetna veriga: INCA GHI > ARSO postaja > cloud model
+- Refresh vsake 10 min
+
+#### Dashboard
+- `docs/pv_dashboard.yaml`: kompletna dashboard konfiguracija
+- 6 sekcij: status chips, časovna okna, danes/jutri krivulje, 5-dnevni stolpci, performance gauge
+- ApexCharts + Mushroom kartice (HACS)
+
+#### README posodobitev
+- Tabela napoved senzorjev, 5-dnevna napoved razlaga, tiered intervali
+- ApexCharts primeri (danes, 5-dnevni stolpci, 5-dnevna krivulja)
+- Link na docs/pv_dashboard.yaml
+
+### Statistika seje
+- **Nove datoteke**: 3 (forecast.py, inca_client.py, docs/pv_dashboard.yaml)
+- **Spremembe**: 8 datotek, ~1500+ vrstic nove kode
+- **Commiti**: 8 (bfcca64 → 1103bb2)
+
+### Odprta vprasanja
+- INCA barvna skala: kalibracija z dejanskimi dnevnimi PNG-ji (potrebujemo opoldanski PNG)
+- Performance factor EMA: ni perzistenten (resetira ob restartu HA)
+- ALADIN GRIB: 72h oblačnost napoved — pretežek za HA (30 MB + eccodes)
+- Avalanche PR #31 čaka na merge
+
+### Naslednji koraki
+- Testirati INCA GHI kodo z dnevnim PNG (kalibracija)
+- Testirati 5-dnevno napoved in dashboard na HA instanci
+- Perzistenten performance factor (shranjevanje v datoteko)
+- Per-zone panel tilt/azimut (format `cona:Wp:nagib:azimut`)
+- Natančnost tracking: napoved vs realno (dnevna primerjava)
