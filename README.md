@@ -19,7 +19,7 @@
 
 ## Pregled
 
-**CLSS Shade** je Home Assistant integracija, ki uporablja podatke **Cikličnega laserskega skeniranja Slovenije (CLSS)** za natančno analizo senčenja vašega doma in okolice. Na podlagi visoko-resolucijskega 3D oblaka točk (10 tock/m², resolucija 0.5 m) integracija izračuna, kateri deli vasega doma, vrta in strehe so v danem trenutku na soncu in kateri v senci.
+**CLSS Shade** je Home Assistant integracija, ki uporablja podatke **Cikličnega laserskega skeniranja Slovenije (CLSS)** za natančno analizo senčenja vašega doma in okolice. Na podlagi visoko-resolucijskega 3D oblaka točk (10 tock/m², resolucija 0.5 m) integracija izračuna, kateri deli vašega doma, vrta in strehe so v danem trenutku na soncu in kateri v senci.
 
 V kombinaciji z vremenskimi podatki iz integracije [ARSO Weather (slovenian_weather_integration)](https://github.com/andrejs2/slovenian_weather_integration) ponuja:
 
@@ -53,14 +53,14 @@ Integracija ob prvi nastavitvi prenese LiDAR podatke iz strežnika Portala Prost
 
 ### Ray-marching algoritem
 
-Za vsako celico v gridu integracija "streli" zarek proti soncu in preveri, ali kaksen objekt (stavba, drevo) prepreci pot svetlobe. Uposteva tudi sezonske spremembe — pozimi, ko drevesa nimajo listov, prepuscajo vec svetlobe (65%) kot poleti z listi (15%).
+Za vsako celico v gridu integracija "izstreli" žarek proti soncu in preveri, ali kakšen objekt (stavba, drevo) prepreči pot svetlobe. Uposteva tudi sezonske spremembe — pozimi, ko drevesa nimajo listov, prepuščajo več svetlobe (65%) kot poleti z listi (15%).
 
 | Razred | Opis | Prepustnost |
 |--------|------|-------------|
 | Stavbe | Strehe, fasade | 0% (popolnoma neprepustne) |
 | Visoka vegetacija (>10 m) | Drevesa | 15-65% (sezonsko) |
 | Srednja vegetacija (3-10 m) | Grmovje, mlada drevesa | 40% |
-| Nizka vegetacija (<3 m) | Trava, grmicevje | 60% |
+| Nizka vegetacija (<3 m) | Trava, grmičevje | 60% |
 | Tla | Tla, ceste | 100% (prepustna) |
 
 **Sezonski model vegetacije:**
@@ -77,36 +77,36 @@ Za vsako celico v gridu integracija "streli" zarek proti soncu in preveri, ali k
 
 ### LiDAR podatki — CLSS (Ciklicno Lasersko Skeniranje Slovenije)
 
-Integracija uporablja podatke iz projekta **CLSS 2023-2025**, ki ga izvaja Flycom Technologies po narocilu Geodetske uprave RS (GURS). Gre za drugo sistematicno lasersko skeniranje celotne Slovenije.
+Integracija uporablja podatke iz projekta **CLSS 2023-2025**, ki ga izvaja Flycom Technologies po naročilu Geodetske uprave RS (GURS). Gre za drugo sistematično lasersko skeniranje celotne Slovenije.
 
 | Lastnost | Vrednost |
 |----------|---------|
-| Gostota tock | 10 tock/m² |
+| Gostota točk | 10 tock/m² |
 | Format | LAZ 1.4 |
 | Koordinatni sistem | EPSG:3794 (D96/TM) |
-| Velikost ploscice | 1×1 km |
+| Velikost ploščice | 1×1 km |
 | Pokritost | Celotna Slovenija |
 | Klasifikacija | 21 razredov (ASPRS) |
 | Licenca | Creative Commons 4.0 (obvezna atribucija) |
 
-Podatki so na voljo na strežniku ARSO: `gis.arso.gov.si/lidar/`. Integracija avtomatsko doloci pravo ploscico in jo prenese.
+Podatki so na voljo na strežniku ARSO: `gis.arso.gov.si/lidar/`. Integracija avtomatsko določi pravo ploščico in jo prenese.
 
 Pregled podatkov: [CLSS pregledovalnik](https://clss.si) | [E-prostor](https://www.e-prostor.gov.si/dostopnost/) | [Navodila za pregledovalnik (PDF)](https://assets.flycom.si/clss/navodila_pregledovalnik_clss.pdf)
 
 ### Vremenski podatki — ARSO (opcijsko)
 
-Ce imate nameščeno integracijo [ARSO Weather](https://github.com/andrejs2/slovenian_weather_integration), CLSS Shade samodejno prebere naslednje senzorje:
+Če imate nameščeno integracijo [ARSO Weather](https://github.com/andrejs2/slovenian_weather_integration), CLSS Shade samodejno prebere naslednje senzorje:
 
 | Podatek | Entiteta | Uporaba |
 |---------|----------|---------|
-| Globalno soncno sevanje | `sensor.arso_weather_*_globalno_soncno_sevanje` | PV ocena |
-| Difuzno soncno sevanje | `sensor.arso_weather_*_difuzno_soncno_sevanje` | PV ocena |
+| Globalno sončno sevanje | `sensor.arso_weather_*_globalno_soncno_sevanje` | PV ocena |
+| Difuzno sončno sevanje | `sensor.arso_weather_*_difuzno_soncno_sevanje` | PV ocena |
 | Evapotranspiracija | `sensor.arso_agrometeo_*_evapotranspiracija` | Zalivanje |
 | Vodna bilanca | `sensor.arso_agrometeo_*_vodna_bilanca` | Zalivanje |
-| Oblacnost | `sensor.arso_weather_*_oblacnost` | Napoved |
+| Oblačnost | `sensor.arso_weather_*_oblacnost` | Napoved |
 | Temperatura | `sensor.arso_weather_*_temperatura` | Kontekst |
 
-Za PV oceno in zalivanje je **priporocena** namestitev ARSO Weather integracije z omogocenim modulom Agrometeo.
+Za PV oceno in zalivanje je **priporočena** namestitev ARSO Weather integracije z omogočenim modulom Agrometeo.
 
 ---
 
@@ -120,15 +120,15 @@ Integracija ustvari naslednje senzorje:
 
 | Senzor | Enota | Opis |
 |--------|-------|------|
-| **Senca** | % | Povprecni delez sence na celotnem obmocju |
-| **Sonce** | % | Povprecni delez sonca na celotnem obmocju |
-| **Visina sonca** | ° | Kot sonca nad obzorjem (0° = obzorje, 90° = zenit) |
+| **Senca** | % | Povprečni delež sence na celotnem območju |
+| **Sonce** | % | Povprečni delež sonca na celotnem območju |
+| **Višina sonca** | ° | Kot sonca nad obzorjem (0° = obzorje, 90° = zenit) |
 | **Azimut sonca** | ° | Smer sonca (0° = sever, 90° = vzhod, 180° = jug, 270° = zahod) |
 | **Dnevna svetloba** | da/ne | Ali je sonce nad obzorjem |
-| **Oblacnost** | % | Oblacnost iz ARSO vremenskih podatkov |
-| **Ocena PV moci** | W | Ocena trenutne proizvodnje z dinamicnim POA izracunom |
-| **Realna PV moc** | W | Dejanska proizvodnja iz inverterja (opcijsko) |
-| **PV faktor ucinkovitosti** | - | Razmerje realno/ocena (1.0 = idealno) |
+| **Oblačnost** | % | Oblačnost iz ARSO vremenskih podatkov |
+| **Ocena PV moči** | W | Ocena trenutne proizvodnje z dinamičnim POA izračunom |
+| **Realna PV moč** | W | Dejanska proizvodnja iz inverterja (opcijsko) |
+| **PV faktor učinkovitosti** | - | Razmerje realno/ocena (1.0 = idealno) |
 | **Potreba po zalivanju** | L | Ocenjena dnevna potreba po zalivanju za vrt |
 
 #### Senzorji napovedi PV proizvodnje
@@ -137,7 +137,7 @@ Integracija ustvari naslednje senzorje:
 |--------|-------|------|
 | **PV napoved danes** | kWh | Napovedana skupna proizvodnja danes |
 | **PV napoved jutri** | kWh | Napovedana skupna proizvodnja jutri |
-| **PV napoved 5 dni** | kWh | Skupni sesteved 5-dnevne napovedi |
+| **PV napoved 5 dni** | kWh | Skupni seštevek 5-dnevne napovedi |
 | **PV napoved naslednja ura** | W | Ocenjena moc v naslednji uri |
 | **PV naslednja ura Wh** | Wh | Energija v naslednji 1 uri |
 | **PV naslednje 3 ure Wh** | Wh | Energija v naslednjih 3 urah |
