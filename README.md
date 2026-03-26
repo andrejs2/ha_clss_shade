@@ -255,13 +255,13 @@ Skupni cas izracuna: ~2.7 min v ozadju, osvezitev vsako uro. Oddaljeni dnevi (3-
 
 #### Casovna okna
 
-Poleg dnevnih skupnih vrednosti integracija izracuna tudi:
+Poleg dnevnih skupnih vrednosti integracija izračuna tudi:
 
 | Senzor | Opis | Uporaba |
 |--------|------|---------|
-| **Naslednja 1h** | Wh v naslednji uri | Kratkorocno planiranje |
-| **Naslednje 3h** | Wh v naslednjih 3 urah | Kdaj pognati pomivalnik |
-| **Preostanek danes** | kWh do konca dneva | Koliko energije se pricakujemo |
+| **Naslednja 1h** | Wh v naslednji uri | Kratkoročno planiranje |
+| **Naslednje 3h** | Wh v naslednjih 3 urah | Kdaj polniti EV ali pripraviti TSV |
+| **Preostanek danes** | kWh do konca dneva | Koliko energije še pričakujemo |
 
 #### Atributi za grafe (ApexCharts)
 
