@@ -62,6 +62,11 @@ DEFAULT_PV_CAPACITY_WP = 5000
 DEFAULT_PV_PANEL_TILT = 30  # degrees from horizontal
 DEFAULT_PV_PANEL_AZIMUTH = 180  # degrees, 180 = south
 
+# Forecast
+DEFAULT_FORECAST_INTERVAL_MIN = 60  # shadow forecast refresh interval
+DEFAULT_FORECAST_WEATHER_INTERVAL_MIN = 15  # weather forecast refresh interval
+FORECAST_STEP_MINUTES = 30  # shadow computation time step
+
 # Data storage
 DATA_DIR_NAME = "clss_shade"
 

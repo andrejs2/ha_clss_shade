@@ -14,6 +14,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     DEGREE,
     PERCENTAGE,
+    UnitOfEnergy,
     UnitOfPower,
     UnitOfVolume,
 )
@@ -97,6 +98,30 @@ GLOBAL_SENSORS: tuple[SensorEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfVolume.LITERS,
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:water",
+    ),
+    SensorEntityDescription(
+        key="pv_forecast_today_kwh",
+        translation_key="pv_forecast_today_kwh",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:solar-power-variant",
+    ),
+    SensorEntityDescription(
+        key="pv_forecast_tomorrow_kwh",
+        translation_key="pv_forecast_tomorrow_kwh",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:solar-power-variant-outline",
+    ),
+    SensorEntityDescription(
+        key="pv_forecast_next_hour_w",
+        translation_key="pv_forecast_next_hour_w",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:flash",
     ),
 )
 
@@ -262,6 +287,31 @@ class ClssShadeSensor(CoordinatorEntity[ClssShadeCoordinator], SensorEntity):
                 else:
                     attrs["status"] = "normalno"
             return attrs
+
+        if key in ("pv_forecast_today_kwh", "pv_forecast_tomorrow_kwh"):
+            fc = data.forecast
+            if fc is None:
+                return None
+            day = fc.today if key == "pv_forecast_today_kwh" else fc.tomorrow
+            if day is None:
+                return None
+            hourly = []
+            for pt in day.hourly:
+                if pt.power_w > 0 or pt.sun_elevation > 0:
+                    hourly.append({
+                        "time": pt.dt.isoformat(),
+                        "estimate_w": round(pt.power_w, 1),
+                        "cloud_factor": round(pt.cloud_factor, 2),
+                        "cloud_coverage": pt.cloud_coverage,
+                        "sun_elevation": round(pt.sun_elevation, 1),
+                        "poa_factor": round(pt.poa_factor, 2),
+                    })
+            return {
+                "forecast_hourly": hourly,
+                "total_kwh": round(day.total_kwh, 2),
+                "computed_at": day.computed_at.isoformat(),
+                "performance_factor_ema": round(fc.performance_factor_ema, 3),
+            }
 
         if key == "irrigation_need" and data.weather:
             attrs = {

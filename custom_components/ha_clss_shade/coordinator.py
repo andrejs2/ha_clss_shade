@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -31,9 +32,20 @@ from .const import (
     DEFAULT_PV_PANEL_AZIMUTH,
     DEFAULT_PV_PANEL_TILT,
     DATA_DIR_NAME,
+    DEFAULT_FORECAST_INTERVAL_MIN,
+    DEFAULT_FORECAST_WEATHER_INTERVAL_MIN,
     DEFAULT_RADIUS_M,
     DEFAULT_UPDATE_INTERVAL_MIN,
     DOMAIN,
+    FORECAST_STEP_MINUTES,
+)
+from .forecast import (
+    ForecastData,
+    ShadowForecastStep,
+    assemble_pv_forecast,
+    compute_shadow_forecast,
+    interpolate_weather,
+    update_performance_ema,
 )
 from .shadow_engine import (
     ShadowResult,
@@ -46,7 +58,9 @@ from .weather_bridge import (
     compute_poa_factor,
     estimate_irrigation_need,
     estimate_pv_power,
+    fetch_weather_forecast,
     find_arso_entities,
+    find_weather_entity,
     read_arso_weather,
 )
 from .zones import ZoneSet, auto_detect_zones, create_circular_zone, create_polygon_zone
@@ -83,6 +97,11 @@ class ClssShadeData:
     pv_power_real: float | None = None
     pv_performance_factor: float | None = None
     irrigation_need: float | None = None
+    # Forecast fields
+    pv_forecast_today_kwh: float | None = None
+    pv_forecast_tomorrow_kwh: float | None = None
+    pv_forecast_next_hour_w: float | None = None
+    forecast: ForecastData | None = None
 
 
 class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
@@ -121,6 +140,16 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
 
         # ARSO weather entity mapping (discovered once)
         self._arso_entities: dict[str, str] | None = None
+
+        # Forecast state
+        self._shadow_forecast_cache: dict[str, list[ShadowForecastStep]] = {}
+        self._shadow_forecast_computed_at: datetime | None = None
+        self._weather_forecast_cache: list[dict] = []
+        self._weather_forecast_fetched_at: datetime | None = None
+        self._forecast_data: ForecastData | None = None
+        self._performance_factor_ema: float = 1.0
+        self._shadow_forecast_task: asyncio.Task | None = None
+        self._weather_entity_id: str = ""
 
     @property
     def latitude(self) -> float:
@@ -217,6 +246,9 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
 
         # Discover ARSO weather entities
         self._arso_entities = find_arso_entities(self.hass)
+
+        # Discover ARSO weather entity for forecasts
+        self._weather_entity_id = find_weather_entity(self.hass)
 
     def _calc_pv_estimate(
         self,
@@ -320,6 +352,105 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
             zone_type=zconf.get("zone_type", "custom"),
         )
 
+    # ------------------------------------------------------------------
+    # Forecast helpers
+    # ------------------------------------------------------------------
+
+    async def _async_refresh_shadow_forecast(self) -> None:
+        """Recompute shadow forecast for today+tomorrow in background executor.
+
+        Takes ~50-120s total, runs in executor thread. Result is cached and
+        reused until next refresh (typically every ~1 hour).
+        """
+        if self._site is None or self._zones is None:
+            return
+
+        now = datetime.now(tz=timezone.utc)
+        today = now.date()
+        tomorrow = today + timedelta(days=1)
+
+        site = self._site
+        zones = self._zones
+        lat, lon = self._lat, self._lon
+        step = FORECAST_STEP_MINUTES
+
+        def _compute() -> dict[str, list[ShadowForecastStep]]:
+            today_data = compute_shadow_forecast(site, zones, lat, lon, today, step)
+            tomorrow_data = compute_shadow_forecast(site, zones, lat, lon, tomorrow, step)
+            return {today.isoformat(): today_data, tomorrow.isoformat(): tomorrow_data}
+
+        try:
+            result = await self.hass.async_add_executor_job(_compute)
+            self._shadow_forecast_cache = result
+            self._shadow_forecast_computed_at = datetime.now(tz=timezone.utc)
+            today_n = len(result.get(today.isoformat(), []))
+            tomorrow_n = len(result.get(tomorrow.isoformat(), []))
+            _LOGGER.info("Shadow forecast computed: %d+%d time steps", today_n, tomorrow_n)
+        except Exception:
+            _LOGGER.exception("Shadow forecast computation failed")
+
+    async def _async_refresh_weather_forecast(self) -> None:
+        """Fetch hourly weather forecast from HA weather entity."""
+        if not self._weather_entity_id:
+            return
+
+        try:
+            result = await fetch_weather_forecast(self.hass, self._weather_entity_id)
+            self._weather_forecast_cache = result
+            self._weather_forecast_fetched_at = datetime.now(tz=timezone.utc)
+            _LOGGER.debug("Weather forecast fetched: %d entries", len(result))
+        except Exception:
+            _LOGGER.exception("Weather forecast fetch failed")
+
+    def _assemble_forecast(self, now: datetime) -> ForecastData | None:
+        """Assemble PV forecast from cached shadow and weather data."""
+        if not self._shadow_forecast_cache:
+            return None
+
+        today = now.date()
+        tomorrow = today + timedelta(days=1)
+
+        today_result = None
+        tomorrow_result = None
+
+        for target_date in (today, tomorrow):
+            shadow_steps = self._shadow_forecast_cache.get(target_date.isoformat())
+            if not shadow_steps:
+                continue
+
+            weather_aligned = interpolate_weather(shadow_steps, self._weather_forecast_cache)
+
+            result = assemble_pv_forecast(
+                shadow_steps=shadow_steps,
+                weather_interpolated=weather_aligned,
+                pv_zones_config=self._pv_zones_config,
+                panel_tilt=self._pv_panel_tilt,
+                panel_azimuth=self._pv_panel_azimuth,
+                performance_factor=self._performance_factor_ema,
+                interval_minutes=FORECAST_STEP_MINUTES,
+            )
+
+            if target_date == today:
+                today_result = result
+            else:
+                tomorrow_result = result
+
+        # Find next-hour power
+        next_hour_w = 0.0
+        if today_result:
+            next_hour = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+            for pt in today_result.hourly:
+                if abs((pt.dt - next_hour).total_seconds()) < FORECAST_STEP_MINUTES * 60:
+                    next_hour_w = pt.power_w
+                    break
+
+        return ForecastData(
+            today=today_result,
+            tomorrow=tomorrow_result,
+            next_hour_w=next_hour_w,
+            performance_factor_ema=self._performance_factor_ema,
+        )
+
     async def _async_update_data(self) -> ClssShadeData:
         """Compute current shadow state."""
         now = datetime.now(tz=timezone.utc)
@@ -369,6 +500,31 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
                         area_m2=garden.area_m2,
                     )
 
+            # Forecast refresh at night too (tomorrow's forecast is useful)
+            shadow_stale = (
+                self._shadow_forecast_computed_at is None
+                or (now - self._shadow_forecast_computed_at)
+                > timedelta(minutes=DEFAULT_FORECAST_INTERVAL_MIN)
+            )
+            if shadow_stale and self._shadow_forecast_task is None:
+                self._shadow_forecast_task = self.hass.async_create_task(
+                    self._async_refresh_shadow_forecast(),
+                    f"{DOMAIN}_shadow_forecast",
+                )
+                self._shadow_forecast_task.add_done_callback(
+                    lambda _: setattr(self, "_shadow_forecast_task", None)
+                )
+
+            weather_stale = (
+                self._weather_forecast_fetched_at is None
+                or (now - self._weather_forecast_fetched_at)
+                > timedelta(minutes=DEFAULT_FORECAST_WEATHER_INTERVAL_MIN)
+            )
+            if weather_stale:
+                await self._async_refresh_weather_forecast()
+
+            forecast = self._assemble_forecast(now)
+
             return ClssShadeData(
                 shadow=None,
                 sun=sun,
@@ -384,6 +540,10 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
                 pv_power_estimate=0.0,
                 pv_power_real=0.0,
                 irrigation_need=irrigation,
+                pv_forecast_today_kwh=round(forecast.today.total_kwh, 2) if forecast and forecast.today else None,
+                pv_forecast_tomorrow_kwh=round(forecast.tomorrow.total_kwh, 2) if forecast and forecast.tomorrow else None,
+                pv_forecast_next_hour_w=0.0,
+                forecast=forecast,
             )
 
         try:
@@ -446,6 +606,38 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
                 if pv_real is not None and pv_estimate and pv_estimate > 50:
                     pv_perf = round(pv_real / pv_estimate, 3)
 
+            # --- Forecast refresh ---
+            shadow_stale = (
+                self._shadow_forecast_computed_at is None
+                or (now - self._shadow_forecast_computed_at)
+                > timedelta(minutes=DEFAULT_FORECAST_INTERVAL_MIN)
+            )
+            if shadow_stale and self._shadow_forecast_task is None:
+                self._shadow_forecast_task = self.hass.async_create_task(
+                    self._async_refresh_shadow_forecast(),
+                    f"{DOMAIN}_shadow_forecast",
+                )
+                self._shadow_forecast_task.add_done_callback(
+                    lambda _: setattr(self, "_shadow_forecast_task", None)
+                )
+
+            weather_stale = (
+                self._weather_forecast_fetched_at is None
+                or (now - self._weather_forecast_fetched_at)
+                > timedelta(minutes=DEFAULT_FORECAST_WEATHER_INTERVAL_MIN)
+            )
+            if weather_stale:
+                await self._async_refresh_weather_forecast()
+
+            # Update performance factor EMA (only with reliable daytime data)
+            if pv_perf is not None and sun.elevation > 10.0:
+                self._performance_factor_ema = update_performance_ema(
+                    self._performance_factor_ema, pv_perf
+                )
+
+            # Assemble forecast from cached data
+            forecast = self._assemble_forecast(now)
+
             return ClssShadeData(
                 shadow=result,
                 sun=sun,
@@ -462,6 +654,10 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
                 pv_power_real=pv_real,
                 pv_performance_factor=pv_perf,
                 irrigation_need=irrigation,
+                pv_forecast_today_kwh=round(forecast.today.total_kwh, 2) if forecast and forecast.today else None,
+                pv_forecast_tomorrow_kwh=round(forecast.tomorrow.total_kwh, 2) if forecast and forecast.tomorrow else None,
+                pv_forecast_next_hour_w=round(forecast.next_hour_w, 1) if forecast else None,
+                forecast=forecast,
             )
 
         except Exception as err:

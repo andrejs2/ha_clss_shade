@@ -105,6 +105,15 @@
       },
       "irrigation_need": {
         "name": "Potreba po zalivanju"
+      },
+      "pv_forecast_today_kwh": {
+        "name": "PV napoved danes"
+      },
+      "pv_forecast_tomorrow_kwh": {
+        "name": "PV napoved jutri"
+      },
+      "pv_forecast_next_hour_w": {
+        "name": "PV napoved naslednja ura"
       }
     }
   }

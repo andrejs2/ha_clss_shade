@@ -105,6 +105,15 @@
       },
       "irrigation_need": {
         "name": "Irrigation need"
+      },
+      "pv_forecast_today_kwh": {
+        "name": "PV forecast today"
+      },
+      "pv_forecast_tomorrow_kwh": {
+        "name": "PV forecast tomorrow"
+      },
+      "pv_forecast_next_hour_w": {
+        "name": "PV forecast next hour"
       }
     }
   }

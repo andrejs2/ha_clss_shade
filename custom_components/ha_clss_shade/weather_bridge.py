@@ -360,6 +360,69 @@ def estimate_pv_power(
     return None
 
 
+def find_weather_entity(hass: HomeAssistant) -> str:
+    """Find the ARSO weather entity for forecast data.
+
+    Searches for a weather.* entity from slovenian_weather_integration.
+
+    Returns:
+        Entity ID string, or empty string if not found.
+    """
+    for state in hass.states.async_all("weather"):
+        if "arso" in state.entity_id:
+            _LOGGER.info("Found ARSO weather entity for forecasts: %s", state.entity_id)
+            return state.entity_id
+    _LOGGER.debug("No ARSO weather entity found for forecasts")
+    return ""
+
+
+async def fetch_weather_forecast(
+    hass: HomeAssistant,
+    weather_entity_id: str,
+) -> list[dict]:
+    """Fetch hourly weather forecast via weather.get_forecasts service.
+
+    Uses the HA weather.get_forecasts service (available since HA 2023.12).
+    The slovenian_weather_integration provides 3-hour interval forecasts
+    for 6 days via this service.
+
+    Returns:
+        List of forecast entries with keys: datetime, condition, temperature,
+        cloud_coverage, precipitation.
+    """
+    if not weather_entity_id:
+        return []
+
+    try:
+        response = await hass.services.async_call(
+            "weather",
+            "get_forecasts",
+            {"type": "hourly", "entity_id": weather_entity_id},
+            blocking=True,
+            return_response=True,
+        )
+    except Exception:
+        _LOGGER.exception("Failed to call weather.get_forecasts for %s", weather_entity_id)
+        return []
+
+    # Response format: {entity_id: {"forecast": [...]}}
+    entity_data = response.get(weather_entity_id, {})
+    raw_forecast = entity_data.get("forecast", [])
+
+    result = []
+    for entry in raw_forecast:
+        result.append({
+            "datetime": entry.get("datetime"),
+            "condition": entry.get("condition"),
+            "temperature": _safe_float(entry.get("temperature")),
+            "cloud_coverage": _safe_float(entry.get("cloud_coverage")),
+            "precipitation": _safe_float(entry.get("precipitation")),
+        })
+
+    _LOGGER.debug("Weather forecast: %d entries from %s", len(result), weather_entity_id)
+    return result
+
+
 def estimate_irrigation_need(
     shade_percent: float,
     evapotranspiration: float | None,
