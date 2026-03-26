@@ -34,64 +34,49 @@
 
 ---
 
-## Faza 3 — PV napoved (naslednja seja)
+## Faza 3 — PV napoved
 
 ### Cilj
 Shadow engine izracuna senco za prihodnje ure/dni → kombinacija z vremensko
 napovedjo (oblacnost) in performance faktorjem → natancna napoved PV proizvodnje.
 
-### Nacrt implementacije
+### Implementirano (2026-03-26)
 
 #### 3.0 Per-zone panel tilt + azimut za natancen POA izracun
-- [ ] Razsiriti PV config format: `cona:Wp:nagib:azimut` (npr. `pv-visja:5925:30:185`)
-- [ ] POA (plane-of-array) irradiance izracun iz GHI + sun position + panel orientacija
-- [ ] `cos(theta_incidence) / cos(theta_zenith)` za vsako uro → dinamicen tilt faktor
-- [ ] Zamenja fiksni tilt_factor z izracunanim per-zone per-hour
+- [x] POA (plane-of-array) irradiance izracun iz GHI + sun position + panel orientacija
+- [x] `cos(theta_incidence) / cos(theta_zenith)` za vsako uro → dinamicen tilt faktor
+- [x] Zamenja fiksni tilt_factor z izracunanim per-zone per-hour
+- [ ] Razsiriti PV config format: `cona:Wp:nagib:azimut` (npr. `pv-visja:5925:30:185`) — per-zone tilt/azimut
 
 #### 3.1 Shadow engine za prihodnje casovne tocke
-- [ ] `compute_shadow_forecast(site, lat, lon, hours_ahead=24, step_minutes=30)`
-- Za vsako casovno tocko: izracunaj polozaj sonca + shadow map
-- Vrne array: `[{time, sun_elevation, sun_azimuth, pv_zone_sun_pct}, ...]`
-- Optimizacija: izracun v executor threadu, kesiranje ce se DSM ne spremeni
-- ~1.3s per frame × 48 tock (24h po 30 min) = ~62s → pocasi v ozadju
+- [x] `compute_shadow_forecast(site, zones, lat, lon, target_date, interval_minutes=30)`
+- [x] Za vsako casovno tocko: izracunaj polozaj sonca + shadow map + per-zone sun%
+- [x] Izracun v executor threadu, kesiranje, osvezitev vsako uro
+- [x] Background task (fire-and-forget) — ne blokira 5-min update cikla
 
 #### 3.2 Kalibracija z performance faktorjem
-- [ ] Tekoci povprecni performance_factor (EMA - exponential moving average)
-- [ ] Shranjevanje v config entry ali persistent datoteko
-- [ ] Samo dnevni podatki (sun_elevation > 10°) za robustno kalibracijo
-- [ ] Loceni faktorji za razlicne pogoje:
-  - `pf_clear` — jasno vreme (oblacnost < 20%)
-  - `pf_cloudy` — oblacno (oblacnost > 60%)
-  - `pf_mixed` — mešano
-- Formula: `napoved = ocena_shadow × pf_pogoj`
+- [x] Tekoci povprecni performance_factor (EMA, alpha=0.1)
+- [x] Samo dnevni podatki (sun_elevation > 10°) za robustno kalibracijo
+- [ ] Shranjevanje EMA v persistent datoteko (zdaj se resetira ob restartu)
+- [ ] Loceni faktorji za razlicne pogoje (pf_clear, pf_cloudy, pf_mixed)
 
-#### 3.3 Vremenski podatki za napoved — ARSO INCA
-- [ ] **INCA nowcasting** (https://meteo.arso.gov.si/uploads/meteo/app/inca/)
+#### 3.3 Vremenski podatki za napoved
+- [x] `weather.get_forecasts` service iz slovenian_weather_integration (3h intervali, 6 dni)
+- [x] Linearna interpolacija 3h vremenskih na 30min shadow korake
+- [x] Oblacnost napoved → cloud_factor za PV izracun
+- [ ] **ARSO INCA nowcasting** — cakamo odgovor ARSO za API dostop
   - 1 km resolucija, posodobitev vsake 15 min, napoved +6h
-  - Soncno sevanje (GHI) — specificno za lokacijo uporabnika, ne postaja
-  - Oblacnost in padavine nowcast
-  - Preveriti: ali je INCA dostopen prek API/JSON ali samo web viewer?
-  - Moznost: dodati INCA modul v slovenian_weather_integration ali direktno v CLSS Shade
-- [ ] Fallback: oblacnost napoved iz ARSO standard (urna napoved za +24h)
-- [ ] `weather.get_forecasts` service iz slovenian_weather_integration
-- [ ] Padavine napoved — ce dezi, PV = 0
-- [ ] Kombinacija: `pv_napoved = shadow_estimate × INCA_sevanje × performance_factor`
+  - Soncno sevanje (GHI) — specificno za lokacijo uporabnika
+  - Ko bo na voljo, zamenja cloud-based model z dejanskim GHI
+- [ ] Padavine napoved — ce dezi, PV = 0 (zdaj ne upostevamo)
 
 #### 3.4 Novi senzorji
-- [ ] `sensor.dom_pv_napoved_danes_kwh` — skupna napovedana proizvodnja danes (kWh)
-- [ ] `sensor.dom_pv_napoved_jutri_kwh` — skupna napovedana proizvodnja jutri (kWh)
-- [ ] `sensor.dom_pv_napoved_naslednja_ura` — napoved za naslednjo uro (W)
-- [ ] Atributi: urna razporeditev proizvodnje (za grafe)
-  ```
-  forecast_today:
-    - time: "08:00"
-      estimate_w: 2100
-      cloud_factor: 0.85
-    - time: "08:30"
-      estimate_w: 3400
-      cloud_factor: 0.85
-    ...
-  ```
+- [x] `sensor.*_pv_forecast_today_kwh` — skupna napovedana proizvodnja danes (kWh)
+- [x] `sensor.*_pv_forecast_tomorrow_kwh` — skupna napovedana proizvodnja jutri (kWh)
+- [x] `sensor.*_pv_forecast_next_hour_w` — napoved za naslednjo uro (W)
+- [x] Atribut `forecast_hourly` z urno razporeditvijo (za ApexCharts grafe)
+
+### Se za implementirati
 
 #### 3.5 Tracking: realno vs napoved
 - [ ] `sensor.dom_pv_napoved_natancnost` — dnevna natancnost napovedi (%)
@@ -106,12 +91,6 @@ napovedjo (oblacnost) in performance faktorjem → natancna napoved PV proizvodn
 - Baterijski sistemi: kdaj shraniti, kdaj porabiti
 - Prodaja na omrezje: optimizacija glede na urno tarifo
 - Dashboard: graf napovedane proizvodnje za danes/jutri
-
-### Odprta vprasanja
-- Ali racunati shadow za 48 casovnih tock blokirno ali async v ozadju?
-- Kako pogosto osvezevati napoved? Ob vsakem coordinator update (5min) ali redkeje?
-- Ali shraniti performance factor v HA storage ali v datoteko?
-- Ali integrirati z energy dashboard (HA native)?
 
 ---
 
