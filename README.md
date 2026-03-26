@@ -131,6 +131,20 @@ Integracija ustvari naslednje senzorje:
 | **PV faktor ucinkovitosti** | - | Razmerje realno/ocena (1.0 = idealno) |
 | **Potreba po zalivanju** | L | Ocenjena dnevna potreba po zalivanju za vrt |
 
+#### Senzorji napovedi PV proizvodnje
+
+| Senzor | Enota | Opis |
+|--------|-------|------|
+| **PV napoved danes** | kWh | Napovedana skupna proizvodnja danes |
+| **PV napoved jutri** | kWh | Napovedana skupna proizvodnja jutri |
+| **PV napoved 5 dni** | kWh | Skupni sesteved 5-dnevne napovedi |
+| **PV napoved naslednja ura** | W | Ocenjena moc v naslednji uri |
+| **PV naslednja ura Wh** | Wh | Energija v naslednji 1 uri |
+| **PV naslednje 3 ure Wh** | Wh | Energija v naslednjih 3 urah |
+| **PV preostanek danes** | kWh | Preostala napovedana proizvodnja danes |
+
+Vsak senzor napovedi danes/jutri/5-dni ima atribut `forecast_hourly` z urno razporeditvijo za grafe (ApexCharts).
+
 #### Senzorji po conah (avtomatska detekcija)
 
 Integracija samodejno prepozna cone iz LiDAR klasifikacije in za vsako ustvari dva senzorja:
@@ -208,7 +222,76 @@ Faktor = Realna_moc / Ocena_moci
 | < 0.70 | **Nizka ucinkovitost** | Umazani paneli, okvara, nov objekt ki senci |
 | > 1.30 | **Ocena prenizka** | Preverite nastavitve (nagib, azimut, kapaciteta) |
 
-**Uporaba:** Faktor omogoca detekcijo anomalij in bo v prihodnosti sluzil za kalibracijo PV napovedi (Faza 3).
+**Uporaba:** Faktor se uporablja za kalibracijo PV napovedi (EMA - eksponentno drsece povprecje).
+
+### PV napoved proizvodnje (5 dni)
+
+Integracija izracuna napoved PV proizvodnje za **5 dni naprej** z kombinacijo:
+
+1. **Shadow forecast** — za vsako prihodnjo uro izracuna senco na PV conah iz 3D modela
+2. **Vremenska napoved** — urna oblacnost iz ARSO Weather (`weather.get_forecasts`)
+3. **POA faktor** — orientacija panelov glede na prihodnji polozaj sonca
+4. **Performance factor EMA** — kalibracija iz preteklih meritev (realno vs ocena)
+
+```
+Za vsako uro v naslednjih 5 dneh:
+  1. Polozaj sonca → senčna mapa → % sonca na PV conah
+  2. Oblačnost napoved → cloud_factor (0.25 - 1.0)
+  3. POA faktor iz kota sonca + nagib/azimut panelov
+  4. Moč = kapaciteta × (sevanje × sonce% × 0.8 + 0.2) / 1000 × performance_factor
+  5. Energija = vsota urnih moči → kWh/dan
+```
+
+#### Tiered intervali
+
+Za optimalno ravnovesje med natancnostjo in zmogljivostjo:
+
+| Dnevi | Interval korakov | Stevilo korakov | Natancnost |
+|-------|-----------------|-----------------|------------|
+| Danes + jutri | 30 min | 36 per dan | Visoka — za urne grafe |
+| Dan 3-5 | 60 min | 18 per dan | Dovolj za dnevne skupne |
+
+Skupni cas izracuna: ~2.7 min v ozadju, osvezitev vsako uro. Oddaljeni dnevi (3-5) se re-uporabijo iz cache-a do 3 ure.
+
+#### Casovna okna
+
+Poleg dnevnih skupnih vrednosti integracija izracuna tudi:
+
+| Senzor | Opis | Uporaba |
+|--------|------|---------|
+| **Naslednja 1h** | Wh v naslednji uri | Kratkorocno planiranje |
+| **Naslednje 3h** | Wh v naslednjih 3 urah | Kdaj pognati pomivalnik |
+| **Preostanek danes** | kWh do konca dneva | Koliko energije se pricakujemo |
+
+#### Atributi za grafe (ApexCharts)
+
+Senzorji `pv_forecast_today_kwh`, `pv_forecast_tomorrow_kwh` in `pv_forecast_5day_kwh` imajo atribut `forecast_hourly` (oz. `forecast_hourly_5day`) z urno razporeditvijo:
+
+```json
+{
+  "forecast_hourly": [
+    {"time": "2026-03-26T06:00:00Z", "estimate_w": 450, "cloud_factor": 0.85, "cloud_coverage": 20, "sun_elevation": 12.5, "poa_factor": 1.15},
+    {"time": "2026-03-26T06:30:00Z", "estimate_w": 920, "cloud_factor": 0.85, "cloud_coverage": 20, "sun_elevation": 18.3, "poa_factor": 1.22},
+    ...
+  ],
+  "total_kwh": 18.5,
+  "performance_factor_ema": 0.92
+}
+```
+
+5-dnevni senzor ima dodatno `days` atribut:
+
+```json
+{
+  "days": [
+    {"date": "2026-03-26", "total_kwh": 18.5, "label": "danes"},
+    {"date": "2026-03-27", "total_kwh": 14.2, "label": "jutri"},
+    {"date": "2026-03-28", "total_kwh": 16.8, "label": "pet 28.03."},
+    {"date": "2026-03-29", "total_kwh": 10.1, "label": "sob 29.03."},
+    {"date": "2026-03-30", "total_kwh": 12.3, "label": "ned 30.03."}
+  ]
+}
+```
 
 ### Pametno zalivanje
 
@@ -725,6 +808,94 @@ Za celovit CLSS Shade dashboard priporocamo razporeditev v 2-3 stolpce:
 - [mini-graph-card](https://github.com/kalkih/mini-graph-card) — za lepe inline grafe
 - [apexcharts-card](https://github.com/RomRider/apexcharts-card) — za napredne grafe (npr. sonce/senca area chart)
 
+### 6. PV napoved — dashboard
+
+Za celovit PV napoved dashboard z ApexCharts in Mushroom karticami glejte **[docs/pv_dashboard.yaml](docs/pv_dashboard.yaml)** — pripravljen YAML za kopiranje v Lovelace.
+
+Vsebuje:
+- Status chips (realno, ocena, faktor, naslednja ura)
+- Casovna okna (1h, 3h, preostanek danes, jutri)
+- Danes — urna krivulja napovedi + realno
+- Jutri — urna krivulja napovedi
+- 5-dnevni stolpicni graf (kWh/dan)
+- Performance gauge + 5-dnevna zvezna krivulja
+
+#### Hitri primeri za ApexCharts
+
+**Danes — napoved vs realno:**
+
+```yaml
+type: custom:apexcharts-card
+header:
+  title: "Danes — PV proizvodnja"
+  show: true
+graph_span: 18h
+span:
+  start: day
+  offset: "+5h"
+series:
+  - entity: sensor.dom_pv_napoved_danes
+    name: Napoved
+    type: area
+    color: "#FFA726"
+    opacity: 0.3
+    stroke_width: 2
+    data_generator: |
+      const data = entity.attributes.forecast_hourly;
+      if (!data) return [];
+      return data.map(e => [new Date(e.time).getTime(), e.estimate_w]);
+  - entity: sensor.dom_realna_pv_moc
+    name: Realno
+    type: line
+    color: "#66BB6A"
+    stroke_width: 3
+    group_by:
+      func: avg
+      duration: 30min
+```
+
+**5-dnevni stolpci:**
+
+```yaml
+type: custom:apexcharts-card
+header:
+  title: "5-dnevna napoved (kWh/dan)"
+  show: true
+apex_config:
+  chart:
+    type: bar
+    height: 250
+series:
+  - entity: sensor.dom_pv_napoved_5_dni
+    name: kWh
+    type: column
+    color: "#FFA726"
+    data_generator: |
+      const days = entity.attributes.days;
+      if (!days) return [];
+      return days.map(d => [d.label, d.total_kwh]);
+```
+
+**5-dnevna zvezna krivulja:**
+
+```yaml
+type: custom:apexcharts-card
+header:
+  title: "5-dnevna krivulja"
+  show: true
+series:
+  - entity: sensor.dom_pv_napoved_5_dni
+    name: Napoved
+    type: area
+    color: "#AB47BC"
+    opacity: 0.2
+    stroke_width: 2
+    data_generator: |
+      const data = entity.attributes.forecast_hourly_5day;
+      if (!data) return [];
+      return data.map(e => [new Date(e.time).getTime(), e.estimate_w]);
+```
+
 ---
 
 ## Tehnicni podatki
@@ -736,6 +907,7 @@ Za celovit CLSS Shade dashboard priporocamo razporeditev v 2-3 stolpce:
 | Prenos LiDAR ploscice | 30-90 s | Enkratno, ~30-50 MB |
 | Rasterizacija LAZ → grid | 5-15 s | Enkratno, rezultat se kesira |
 | Izracun sencenja | 1-2 s | Vsake 5 minut |
+| PV napoved 5 dni | ~2.7 min | V ozadju, vsako uro |
 | Poraba pomnilnika | ~50 MB | Za 800×800 grid (200 m radij) |
 
 ### Odvisnosti
