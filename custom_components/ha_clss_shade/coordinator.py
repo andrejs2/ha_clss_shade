@@ -13,6 +13,7 @@ import numpy as np
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_LATITUDE, CONF_LONGITUDE
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .clss_data.rasterizer import SiteModel, rasterize_laz
@@ -41,7 +42,9 @@ from .const import (
     FORECAST_FAR_CACHE_HOURS,
     FORECAST_STEP_MINUTES,
     FORECAST_STEP_MINUTES_FAR,
+    INCA_REFRESH_INTERVAL_MIN,
 )
+from .inca_client import fetch_inca_solar_radiation
 from .forecast import (
     ForecastData,
     ShadowForecastStep,
@@ -159,6 +162,11 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
         self._performance_factor_ema: float = 1.0
         self._shadow_forecast_task: asyncio.Task | None = None
         self._weather_entity_id: str = ""
+
+        # INCA nowcasting state
+        self._inca_ghi: float | None = None
+        self._inca_timestamp: str | None = None
+        self._inca_fetched_at: datetime | None = None
 
     @property
     def latitude(self) -> float:
@@ -285,6 +293,7 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
                 cloud_coverage=weather.cloud_coverage,
                 panel_capacity_wp=5000.0,
                 poa_factor=poa,
+                inca_solar_radiation=weather.inca_solar_radiation,
             )
 
         total_power = 0.0
@@ -299,6 +308,7 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
                 cloud_coverage=weather.cloud_coverage,
                 panel_capacity_wp=cap,
                 poa_factor=poa,
+                inca_solar_radiation=weather.inca_solar_radiation,
             )
             if result is not None:
                 total_power += result
@@ -619,6 +629,22 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
                             cell_count=zone.cell_count,
                         )
 
+            # Refresh INCA solar radiation (every 10 min)
+            inca_stale = (
+                self._inca_fetched_at is None
+                or (now - self._inca_fetched_at)
+                > timedelta(minutes=INCA_REFRESH_INTERVAL_MIN)
+            )
+            if inca_stale:
+                session = async_get_clientsession(self.hass)
+                ghi, ts = await fetch_inca_solar_radiation(
+                    session, self._lat, self._lon
+                )
+                if ghi is not None:
+                    self._inca_ghi = ghi
+                    self._inca_timestamp = ts
+                self._inca_fetched_at = now
+
             # Read ARSO weather data
             weather = None
             pv_estimate = None
@@ -628,6 +654,10 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
                 self._arso_entities = find_arso_entities(self.hass)
             if self._arso_entities:
                 weather = read_arso_weather(self.hass, self._arso_entities)
+
+                # Inject INCA GHI into weather data
+                if self._inca_ghi is not None:
+                    weather.inca_solar_radiation = self._inca_ghi
 
                 # PV estimate — per-zone capacity with POA
                 pv_estimate = self._calc_pv_estimate(

@@ -37,7 +37,8 @@ class AgroDayData:
 class ArsoWeatherData:
     """Current weather data from ARSO sensors."""
 
-    solar_radiation: float | None = None  # W/m² (global)
+    solar_radiation: float | None = None  # W/m² (global) from ARSO station
+    inca_solar_radiation: float | None = None  # W/m² from INCA 1km grid (location-specific)
     diffuse_radiation: float | None = None  # W/m²
     cloud_coverage: float | None = None  # %
     temperature: float | None = None  # °C
@@ -319,16 +320,20 @@ def estimate_pv_power(
     panel_capacity_wp: float = 5000.0,
     poa_factor: float = 1.2,
     system_losses: float = 0.08,
+    inca_solar_radiation: float | None = None,
 ) -> float | None:
     """Estimate PV power output combining shade analysis with solar radiation.
 
+    Priority chain: INCA GHI (1km grid) > ARSO station GHI > cloud model.
+
     Args:
         sun_percent: Percentage of direct sunlight on the PV zone (0-100).
-        solar_radiation: Measured global horizontal radiation in W/m² from ARSO.
+        solar_radiation: Measured global horizontal radiation in W/m² from ARSO station.
         cloud_coverage: Cloud coverage percentage (0-100) from ARSO.
         panel_capacity_wp: Installed PV capacity in Wp.
         poa_factor: Plane-of-array factor from compute_poa_factor().
         system_losses: System losses (inverter, wiring, temperature) as fraction.
+        inca_solar_radiation: GHI in W/m² from INCA 1km grid (location-specific).
 
     Returns:
         Estimated power output in Watts, or None if no data.
@@ -338,9 +343,16 @@ def estimate_pv_power(
 
     sun_fraction = sun_percent / 100.0
 
-    if solar_radiation is not None and solar_radiation > 0:
+    # Priority: INCA (location-specific 1km) > ARSO station > cloud model
+    ghi = None
+    if inca_solar_radiation is not None and inca_solar_radiation > 0:
+        ghi = inca_solar_radiation
+    elif solar_radiation is not None and solar_radiation > 0:
+        ghi = solar_radiation
+
+    if ghi is not None:
         # Apply POA correction: tilted panels vs horizontal measurement
-        poa_radiation = solar_radiation * poa_factor
+        poa_radiation = ghi * poa_factor
 
         # Shade adjustment: in shade, only diffuse reaches panels (~20%)
         effective_radiation = poa_radiation * (sun_fraction * 0.8 + 0.2)

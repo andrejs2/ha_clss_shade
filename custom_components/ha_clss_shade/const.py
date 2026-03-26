@@ -70,6 +70,15 @@ FORECAST_STEP_MINUTES_FAR = 60  # shadow computation time step (days 2+)
 FORECAST_DAYS = 5  # total forecast days (today + 4)
 FORECAST_FAR_CACHE_HOURS = 3  # cache far-day shadow data for N hours
 
+# INCA nowcasting
+INCA_BASE_URL = "https://meteo.arso.gov.si"
+INCA_SI0ZM_JSON = "/uploads/probase/www/nowcast/inca/inca_si0zm_data.json?prod=si0zm"
+INCA_REFRESH_INTERVAL_MIN = 10
+INCA_BBOX = (44.67, 12.1, 47.42, 17.44)  # lat_min, lon_min, lat_max, lon_max
+INCA_WIDTH = 800
+INCA_HEIGHT = 600
+INCA_MAX_GHI = 1200  # W/m² max for color scale calibration
+
 # Data storage
 DATA_DIR_NAME = "clss_shade"
 
