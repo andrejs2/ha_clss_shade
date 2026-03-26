@@ -391,8 +391,12 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
 
     async def _async_refresh_weather_forecast(self) -> None:
         """Fetch hourly weather forecast from HA weather entity."""
+        # Lazy discovery: retry if weather entity wasn't found at setup
+        # (handles race condition when slovenian_weather_integration loads after us)
         if not self._weather_entity_id:
-            return
+            self._weather_entity_id = find_weather_entity(self.hass)
+            if not self._weather_entity_id:
+                return
 
         try:
             result = await fetch_weather_forecast(self.hass, self._weather_entity_id)
@@ -488,6 +492,8 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
             # Still read weather data (useful for cloud coverage, irrigation)
             weather = None
             irrigation = None
+            if not self._arso_entities:
+                self._arso_entities = find_arso_entities(self.hass)
             if self._arso_entities:
                 weather = read_arso_weather(self.hass, self._arso_entities)
                 if weather and "garden" in zone_data:
@@ -574,6 +580,8 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
             pv_estimate = None
             irrigation = None
 
+            if not self._arso_entities:
+                self._arso_entities = find_arso_entities(self.hass)
             if self._arso_entities:
                 weather = read_arso_weather(self.hass, self._arso_entities)
 

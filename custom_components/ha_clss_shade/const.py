@@ -64,7 +64,7 @@ DEFAULT_PV_PANEL_AZIMUTH = 180  # degrees, 180 = south
 
 # Forecast
 DEFAULT_FORECAST_INTERVAL_MIN = 60  # shadow forecast refresh interval
-DEFAULT_FORECAST_WEATHER_INTERVAL_MIN = 15  # weather forecast refresh interval
+DEFAULT_FORECAST_WEATHER_INTERVAL_MIN = 30  # weather forecast refresh interval
 FORECAST_STEP_MINUTES = 30  # shadow computation time step
 
 # Data storage
