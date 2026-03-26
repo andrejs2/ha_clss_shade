@@ -121,6 +121,34 @@ GLOBAL_SENSORS: tuple[SensorEntityDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:flash",
     ),
+    SensorEntityDescription(
+        key="pv_forecast_5day_kwh",
+        translation_key="pv_forecast_5day_kwh",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:calendar-week",
+    ),
+    SensorEntityDescription(
+        key="pv_forecast_next_1h_wh",
+        translation_key="pv_forecast_next_1h_wh",
+        native_unit_of_measurement="Wh",
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:clock-fast",
+    ),
+    SensorEntityDescription(
+        key="pv_forecast_next_3h_wh",
+        translation_key="pv_forecast_next_3h_wh",
+        native_unit_of_measurement="Wh",
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:clock-outline",
+    ),
+    SensorEntityDescription(
+        key="pv_forecast_rest_of_today_kwh",
+        translation_key="pv_forecast_rest_of_today_kwh",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:sun-clock",
+    ),
 )
 
 # Zone icon mapping by zone_type
@@ -308,6 +336,39 @@ class ClssShadeSensor(CoordinatorEntity[ClssShadeCoordinator], SensorEntity):
                 "forecast_hourly": hourly,
                 "total_kwh": round(day.total_kwh, 2),
                 "computed_at": day.computed_at.isoformat(),
+                "performance_factor_ema": round(fc.performance_factor_ema, 3),
+            }
+
+        if key == "pv_forecast_5day_kwh":
+            fc = data.forecast
+            if fc is None or not fc.days:
+                return None
+            day_labels = ["danes", "jutri"]
+            days_attr = []
+            all_hourly = []
+            for i, day in enumerate(fc.days):
+                label = day_labels[i] if i < len(day_labels) else day.date.strftime("%a %d.%m.")
+                days_attr.append({
+                    "date": day.date.isoformat(),
+                    "total_kwh": round(day.total_kwh, 2),
+                    "label": label,
+                })
+                for pt in day.hourly:
+                    if pt.power_w > 0 or pt.sun_elevation > 0:
+                        all_hourly.append({
+                            "time": pt.dt.isoformat(),
+                            "estimate_w": round(pt.power_w, 1),
+                            "cloud_coverage": pt.cloud_coverage,
+                            "sun_elevation": round(pt.sun_elevation, 1),
+                            "day_index": i,
+                        })
+            return {
+                "days": days_attr,
+                "forecast_hourly_5day": all_hourly,
+                "next_1h_wh": round(fc.next_1h_wh, 0),
+                "next_3h_wh": round(fc.next_3h_wh, 0),
+                "rest_of_today_kwh": round(fc.rest_of_today_kwh, 2),
+                "computed_at": fc.days[0].computed_at.isoformat(),
                 "performance_factor_ema": round(fc.performance_factor_ema, 3),
             }
 

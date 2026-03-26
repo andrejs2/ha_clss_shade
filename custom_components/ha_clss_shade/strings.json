@@ -114,6 +114,18 @@
       },
       "pv_forecast_next_hour_w": {
         "name": "PV forecast next hour"
+      },
+      "pv_forecast_5day_kwh": {
+        "name": "PV forecast 5 days"
+      },
+      "pv_forecast_next_1h_wh": {
+        "name": "PV forecast next 1h"
+      },
+      "pv_forecast_next_3h_wh": {
+        "name": "PV forecast next 3h"
+      },
+      "pv_forecast_rest_of_today_kwh": {
+        "name": "PV forecast rest of today"
       }
     }
   }

@@ -114,6 +114,18 @@
       },
       "pv_forecast_next_hour_w": {
         "name": "PV napoved naslednja ura"
+      },
+      "pv_forecast_5day_kwh": {
+        "name": "PV napoved 5 dni"
+      },
+      "pv_forecast_next_1h_wh": {
+        "name": "PV naslednja ura Wh"
+      },
+      "pv_forecast_next_3h_wh": {
+        "name": "PV naslednje 3 ure Wh"
+      },
+      "pv_forecast_rest_of_today_kwh": {
+        "name": "PV preostanek danes"
       }
     }
   }

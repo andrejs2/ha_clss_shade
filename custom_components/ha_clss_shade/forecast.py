@@ -60,10 +60,22 @@ class PvForecastDay:
 class ForecastData:
     """Aggregate forecast — attached to ClssShadeData."""
 
-    today: PvForecastDay | None = None
-    tomorrow: PvForecastDay | None = None
+    days: list[PvForecastDay] = field(default_factory=list)  # 0=today, 1=tomorrow, ...
     next_hour_w: float = 0.0
+    next_1h_wh: float = 0.0
+    next_3h_wh: float = 0.0
+    rest_of_today_kwh: float = 0.0
     performance_factor_ema: float = 1.0
+
+    @property
+    def today(self) -> PvForecastDay | None:
+        """Backward-compatible access to today's forecast."""
+        return self.days[0] if self.days else None
+
+    @property
+    def tomorrow(self) -> PvForecastDay | None:
+        """Backward-compatible access to tomorrow's forecast."""
+        return self.days[1] if len(self.days) > 1 else None
 
 
 # ---------------------------------------------------------------------------
@@ -380,6 +392,54 @@ def assemble_pv_forecast(
         hourly=hourly,
         computed_at=datetime.now(tz=timezone.utc),
     )
+
+
+# ---------------------------------------------------------------------------
+# Time window calculations
+# ---------------------------------------------------------------------------
+
+
+def compute_time_windows(
+    today_forecast: PvForecastDay | None,
+    now: datetime,
+    interval_minutes: int = 30,
+) -> tuple[float, float, float]:
+    """Compute energy in upcoming time windows from today's forecast.
+
+    Args:
+        today_forecast: Today's PV forecast with hourly data.
+        now: Current UTC datetime.
+        interval_minutes: Step interval in minutes.
+
+    Returns:
+        Tuple of (next_1h_wh, next_3h_wh, rest_of_today_kwh).
+    """
+    if today_forecast is None or not today_forecast.hourly:
+        return 0.0, 0.0, 0.0
+
+    interval_hours = interval_minutes / 60.0
+    next_1h_wh = 0.0
+    next_3h_wh = 0.0
+    rest_wh = 0.0
+
+    for pt in today_forecast.hourly:
+        dt = pt.dt if pt.dt.tzinfo else pt.dt.replace(tzinfo=timezone.utc)
+        diff_seconds = (dt - now).total_seconds()
+
+        # Only future steps
+        if diff_seconds < 0:
+            continue
+
+        diff_hours = diff_seconds / 3600.0
+        energy_wh = pt.power_w * interval_hours
+
+        rest_wh += energy_wh
+        if diff_hours < 1.0:
+            next_1h_wh += energy_wh
+        if diff_hours < 3.0:
+            next_3h_wh += energy_wh
+
+    return round(next_1h_wh, 0), round(next_3h_wh, 0), round(rest_wh / 1000.0, 2)
 
 
 # ---------------------------------------------------------------------------

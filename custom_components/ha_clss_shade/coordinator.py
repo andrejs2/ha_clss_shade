@@ -37,13 +37,17 @@ from .const import (
     DEFAULT_RADIUS_M,
     DEFAULT_UPDATE_INTERVAL_MIN,
     DOMAIN,
+    FORECAST_DAYS,
+    FORECAST_FAR_CACHE_HOURS,
     FORECAST_STEP_MINUTES,
+    FORECAST_STEP_MINUTES_FAR,
 )
 from .forecast import (
     ForecastData,
     ShadowForecastStep,
     assemble_pv_forecast,
     compute_shadow_forecast,
+    compute_time_windows,
     interpolate_weather,
     update_performance_ema,
 )
@@ -101,6 +105,10 @@ class ClssShadeData:
     pv_forecast_today_kwh: float | None = None
     pv_forecast_tomorrow_kwh: float | None = None
     pv_forecast_next_hour_w: float | None = None
+    pv_forecast_5day_kwh: float | None = None
+    pv_forecast_next_1h_wh: float | None = None
+    pv_forecast_next_3h_wh: float | None = None
+    pv_forecast_rest_of_today_kwh: float | None = None
     forecast: ForecastData | None = None
 
 
@@ -144,6 +152,7 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
         # Forecast state
         self._shadow_forecast_cache: dict[str, list[ShadowForecastStep]] = {}
         self._shadow_forecast_computed_at: datetime | None = None
+        self._shadow_forecast_day_computed: dict[str, datetime] = {}
         self._weather_forecast_cache: list[dict] = []
         self._weather_forecast_fetched_at: datetime | None = None
         self._forecast_data: ForecastData | None = None
@@ -357,35 +366,60 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
     # ------------------------------------------------------------------
 
     async def _async_refresh_shadow_forecast(self) -> None:
-        """Recompute shadow forecast for today+tomorrow in background executor.
+        """Recompute shadow forecast for N days in background executor.
 
-        Takes ~50-120s total, runs in executor thread. Result is cached and
-        reused until next refresh (typically every ~1 hour).
+        Days 0-1 use 30-min steps, days 2+ use 60-min steps.
+        Far days (2+) reuse cached data if less than FORECAST_FAR_CACHE_HOURS old.
+        Total ~2.7 min for 5 days, runs in executor thread every ~1 hour.
         """
         if self._site is None or self._zones is None:
             return
 
         now = datetime.now(tz=timezone.utc)
         today = now.date()
-        tomorrow = today + timedelta(days=1)
 
         site = self._site
         zones = self._zones
         lat, lon = self._lat, self._lon
-        step = FORECAST_STEP_MINUTES
+        existing_cache = dict(self._shadow_forecast_cache)
+        existing_timestamps = dict(self._shadow_forecast_day_computed)
 
         def _compute() -> dict[str, list[ShadowForecastStep]]:
-            today_data = compute_shadow_forecast(site, zones, lat, lon, today, step)
-            tomorrow_data = compute_shadow_forecast(site, zones, lat, lon, tomorrow, step)
-            return {today.isoformat(): today_data, tomorrow.isoformat(): tomorrow_data}
+            result: dict[str, list[ShadowForecastStep]] = {}
+            for day_offset in range(FORECAST_DAYS):
+                target = today + timedelta(days=day_offset)
+                key = target.isoformat()
+                step = FORECAST_STEP_MINUTES if day_offset < 2 else FORECAST_STEP_MINUTES_FAR
+
+                # Reuse cached far-day data if recent enough
+                if day_offset >= 2 and key in existing_cache:
+                    cached_at = existing_timestamps.get(key)
+                    if cached_at and (now - cached_at).total_seconds() < FORECAST_FAR_CACHE_HOURS * 3600:
+                        result[key] = existing_cache[key]
+                        continue
+
+                result[key] = compute_shadow_forecast(site, zones, lat, lon, target, step)
+            return result
 
         try:
             result = await self.hass.async_add_executor_job(_compute)
-            self._shadow_forecast_cache = result
+
+            # Clean up old days from cache
+            valid_keys = {(today + timedelta(days=i)).isoformat() for i in range(FORECAST_DAYS)}
+            self._shadow_forecast_cache = {k: v for k, v in result.items() if k in valid_keys}
             self._shadow_forecast_computed_at = datetime.now(tz=timezone.utc)
-            today_n = len(result.get(today.isoformat(), []))
-            tomorrow_n = len(result.get(tomorrow.isoformat(), []))
-            _LOGGER.info("Shadow forecast computed: %d+%d time steps", today_n, tomorrow_n)
+
+            # Track per-day computation timestamps
+            for key in result:
+                if key not in existing_timestamps or key not in existing_cache:
+                    self._shadow_forecast_day_computed[key] = now
+            # Clean old timestamps
+            self._shadow_forecast_day_computed = {
+                k: v for k, v in self._shadow_forecast_day_computed.items() if k in valid_keys
+            }
+
+            step_counts = [len(result.get((today + timedelta(days=i)).isoformat(), [])) for i in range(FORECAST_DAYS)]
+            _LOGGER.info("Shadow forecast computed: %s time steps", "+".join(str(n) for n in step_counts))
         except Exception:
             _LOGGER.exception("Shadow forecast computation failed")
 
@@ -412,16 +446,15 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
             return None
 
         today = now.date()
-        tomorrow = today + timedelta(days=1)
+        days: list = []
 
-        today_result = None
-        tomorrow_result = None
-
-        for target_date in (today, tomorrow):
+        for day_offset in range(FORECAST_DAYS):
+            target_date = today + timedelta(days=day_offset)
             shadow_steps = self._shadow_forecast_cache.get(target_date.isoformat())
             if not shadow_steps:
                 continue
 
+            interval = FORECAST_STEP_MINUTES if day_offset < 2 else FORECAST_STEP_MINUTES_FAR
             weather_aligned = interpolate_weather(shadow_steps, self._weather_forecast_cache)
 
             result = assemble_pv_forecast(
@@ -431,27 +464,34 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
                 panel_tilt=self._pv_panel_tilt,
                 panel_azimuth=self._pv_panel_azimuth,
                 performance_factor=self._performance_factor_ema,
-                interval_minutes=FORECAST_STEP_MINUTES,
+                interval_minutes=interval,
             )
+            days.append(result)
 
-            if target_date == today:
-                today_result = result
-            else:
-                tomorrow_result = result
+        if not days:
+            return None
 
         # Find next-hour power
         next_hour_w = 0.0
-        if today_result:
+        today_forecast = days[0] if days else None
+        if today_forecast:
             next_hour = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
-            for pt in today_result.hourly:
+            for pt in today_forecast.hourly:
                 if abs((pt.dt - next_hour).total_seconds()) < FORECAST_STEP_MINUTES * 60:
                     next_hour_w = pt.power_w
                     break
 
+        # Time windows
+        next_1h, next_3h, rest_today = compute_time_windows(
+            today_forecast, now, FORECAST_STEP_MINUTES,
+        )
+
         return ForecastData(
-            today=today_result,
-            tomorrow=tomorrow_result,
+            days=days,
             next_hour_w=next_hour_w,
+            next_1h_wh=next_1h,
+            next_3h_wh=next_3h,
+            rest_of_today_kwh=rest_today,
             performance_factor_ema=self._performance_factor_ema,
         )
 
@@ -549,6 +589,10 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
                 pv_forecast_today_kwh=round(forecast.today.total_kwh, 2) if forecast and forecast.today else None,
                 pv_forecast_tomorrow_kwh=round(forecast.tomorrow.total_kwh, 2) if forecast and forecast.tomorrow else None,
                 pv_forecast_next_hour_w=0.0,
+                pv_forecast_5day_kwh=round(sum(d.total_kwh for d in forecast.days), 2) if forecast and forecast.days else None,
+                pv_forecast_next_1h_wh=0.0,
+                pv_forecast_next_3h_wh=0.0,
+                pv_forecast_rest_of_today_kwh=0.0,
                 forecast=forecast,
             )
 
@@ -665,6 +709,10 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
                 pv_forecast_today_kwh=round(forecast.today.total_kwh, 2) if forecast and forecast.today else None,
                 pv_forecast_tomorrow_kwh=round(forecast.tomorrow.total_kwh, 2) if forecast and forecast.tomorrow else None,
                 pv_forecast_next_hour_w=round(forecast.next_hour_w, 1) if forecast else None,
+                pv_forecast_5day_kwh=round(sum(d.total_kwh for d in forecast.days), 2) if forecast and forecast.days else None,
+                pv_forecast_next_1h_wh=round(forecast.next_1h_wh, 0) if forecast else None,
+                pv_forecast_next_3h_wh=round(forecast.next_3h_wh, 0) if forecast else None,
+                pv_forecast_rest_of_today_kwh=round(forecast.rest_of_today_kwh, 2) if forecast else None,
                 forecast=forecast,
             )
 
