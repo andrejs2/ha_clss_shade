@@ -713,6 +713,14 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
 
             forecast = self._assemble_forecast(now)
 
+            # 3D zones: all 0% sun at night (not Unknown)
+            zones_3d_night: dict[str, float] = {}
+            zones_3d_config = self.config_entry.options.get("zones_3d", [])
+            for z3d in zones_3d_config:
+                name = z3d.get("name", "")
+                if name:
+                    zones_3d_night[name] = 0.0
+
             return ClssShadeData(
                 shadow=None,
                 sun=sun,
@@ -728,6 +736,7 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
                 pv_power_estimate=0.0,
                 pv_power_real=0.0,
                 irrigation_need=irrigation,
+                zones_3d=zones_3d_night,
                 pv_forecast_today_kwh=round(forecast.today.total_kwh, 2) if forecast and forecast.today else None,
                 pv_forecast_tomorrow_kwh=round(forecast.tomorrow.total_kwh, 2) if forecast and forecast.tomorrow else None,
                 pv_forecast_next_hour_w=0.0,

@@ -115,7 +115,12 @@ async def _fetch_elevations_batch(
     lats: list[float],
     lons: list[float],
 ) -> list[float | None]:
-    """Fetch elevations for a batch of points from Open-Meteo."""
+    """Fetch elevations for a batch of points from Open-Meteo.
+
+    Includes retry with backoff for HTTP 429 (rate limit) responses.
+    """
+    import asyncio
+
     import aiohttp
 
     results: list[float | None] = []
@@ -130,31 +135,50 @@ async def _fetch_elevations_batch(
             "longitude": ",".join(f"{lon:.5f}" for lon in chunk_lons),
         }
 
-        try:
-            async with session.get(
-                OPENMETEO_ELEVATION_URL,
-                params=params,
-                timeout=aiohttp.ClientTimeout(total=15),
-            ) as resp:
-                if resp.status != 200:
-                    _LOGGER.warning(
-                        "Open-Meteo elevation fetch failed: HTTP %d", resp.status,
-                    )
-                    results.extend([None] * len(chunk_lats))
-                    continue
-                data = await resp.json()
+        # Retry up to 3 times with backoff for rate limiting
+        success = False
+        for attempt in range(3):
+            try:
+                async with session.get(
+                    OPENMETEO_ELEVATION_URL,
+                    params=params,
+                    timeout=aiohttp.ClientTimeout(total=15),
+                ) as resp:
+                    if resp.status == 429:
+                        wait = 2.0 * (attempt + 1)
+                        _LOGGER.debug(
+                            "Open-Meteo rate limited, waiting %.0fs (attempt %d)",
+                            wait, attempt + 1,
+                        )
+                        await asyncio.sleep(wait)
+                        continue
+                    if resp.status != 200:
+                        _LOGGER.warning(
+                            "Open-Meteo elevation fetch failed: HTTP %d", resp.status,
+                        )
+                        break
+                    data = await resp.json()
 
-            elevations = data.get("elevation", [])
-            for elev in elevations:
-                results.append(float(elev) if elev is not None else None)
+                elevations = data.get("elevation", [])
+                for elev in elevations:
+                    results.append(float(elev) if elev is not None else None)
 
-            # Pad if response shorter than request
-            if len(elevations) < len(chunk_lats):
-                results.extend([None] * (len(chunk_lats) - len(elevations)))
+                # Pad if response shorter than request
+                if len(elevations) < len(chunk_lats):
+                    results.extend([None] * (len(chunk_lats) - len(elevations)))
 
-        except Exception:
-            _LOGGER.exception("Open-Meteo elevation batch fetch failed")
+                success = True
+                break
+
+            except Exception:
+                _LOGGER.exception("Open-Meteo elevation batch fetch failed")
+                break
+
+        if not success:
             results.extend([None] * len(chunk_lats))
+
+        # Small delay between batches to avoid rate limiting
+        await asyncio.sleep(0.3)
 
     return results
 

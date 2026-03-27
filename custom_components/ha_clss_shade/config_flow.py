@@ -10,6 +10,7 @@ from homeassistant import config_entries
 from homeassistant.const import CONF_LATITUDE, CONF_LONGITUDE, CONF_NAME
 
 from .const import (
+    CONF_3D_ZONES,
     CONF_CUSTOM_ZONES,
     CONF_INCLUDE_NEIGHBORS,
     CONF_PV_PANEL_AZIMUTH,
@@ -131,7 +132,7 @@ class ClssShadeOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             action = user_input.pop("zone_action", "done")
 
-            # Preserve current custom zones
+            # Preserve current custom zones AND 3D zones
             self._options = {
                 CONF_RADIUS: user_input.get(CONF_RADIUS, DEFAULT_RADIUS_M),
                 CONF_INCLUDE_NEIGHBORS: user_input.get(CONF_INCLUDE_NEIGHBORS, False),
@@ -141,6 +142,9 @@ class ClssShadeOptionsFlow(config_entries.OptionsFlow):
                 CONF_PV_REAL_ENTITY: user_input.get(CONF_PV_REAL_ENTITY, ""),
                 CONF_CUSTOM_ZONES: list(
                     self._config_entry.options.get(CONF_CUSTOM_ZONES, [])
+                ),
+                CONF_3D_ZONES: list(
+                    self._config_entry.options.get(CONF_3D_ZONES, [])
                 ),
             }
 
