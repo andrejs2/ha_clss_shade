@@ -5,10 +5,8 @@ from __future__ import annotations
 import colorsys
 import logging
 from io import BytesIO
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    import aiohttp
+import aiohttp
 
 from .const import (
     INCA_BASE_URL,
