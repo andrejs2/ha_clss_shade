@@ -268,13 +268,26 @@ Implementacija treh "low-hanging fruit" izboljšav solarnega modela.
 - **coordinator.py**: posredovanje sun_elevation, day_of_year, temperature v estimate_pv_power()
 - **Commiti**: 1 (a1e140e)
 
+### SolarEdge API analiza
+- Pridobljen API ključ, site ID 2115036 (11.06 kWp, Ljubljana-Dobrunje)
+- JinkoSolar JKM-395N-6RL3-V Tiger, temp coef -0.34%/°C
+- Potegnjeni podatki: 5 let dnevne proizvodnje (1822 dni), 15-min za 3 mesece
+- **Validacija Haurwitz modela**: na jasnih dnevih ratio 95-110% → model je natančen!
+- **Jutranje sencenje odkrito**: ob 8:00 samo 11-38% modela → ovira na vzhodni strani
+  - To je ravno kar naš LiDAR shadow engine modelira
+- **Mesečni weather faktorji** izračunani za orientacijo 35°/220° (SSW):
+  - Zima: 25-36%, poletje: 70-71%, letno: 57.6%
+- Temp koeficient posodobljen na -0.34% (JinkoSolar spec)
+- Paneli: 35° nagib, 220° azimut (SSW) — pojasni popoldanski peak
+
 ### Odprta vprašanja
-- Kako se novi model obnaša v praksi? Dan 1 testiranja je bil včeraj, danes je dan 2.
-- Performance EMA se bo moral resetirati (drugačen model = drugačen faktor)
-- Ali bo Haurwitz dovolj natančen za Slovenijo? (atmosferska motnost)
+- Kaj je jutranja ovira? (drevo, stavba, hrib) — LiDAR shadow engine bo pokazal
+- Ali sta oba niza (pv_visja/pv_nizja) istega nagiba in azimuta?
+- Performance EMA se bo moral resetirati (drugačen model)
 
 ### Naslednji koraki
 - Testirati novi model na HA instanci in primerjati z forecast.solar
 - INCA/forecast blending (ko imamo INCA za bližnjo prihodnost, forecast za daljšo)
 - Perzistenten performance factor
+- Mesečni weather faktorji kot fallback v forecast.py
 - Ko naberemo mesec podatkov: sklearn korekcija (à la EMHASS ML adjustment)
