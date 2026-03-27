@@ -153,6 +153,10 @@
   <span class="status" id="status">Nalagam...</span>
   <button id="btn-2d" class="active">2D</button>
   <button id="btn-3d">3D</button>
+  <button id="btn-draw3d" style="display:none">+ 3D Cona</button>
+  <button id="btn-finish3d" class="primary" style="display:none">Zaključi</button>
+  <button id="btn-cancel3d" class="danger" style="display:none">Prekliči</button>
+  <span id="draw3d-status" style="display:none;font-size:12px;color:#4ade80"></span>
   <button class="primary" id="btn-save" disabled>Shrani</button>
 </div>
 
@@ -718,8 +722,23 @@
       viewer.loadTerrain(result);
       terrainLoaded = true;
       loading3d.style.display = 'none';
+      btnDraw3d.style.display = 'inline-block';
 
-      // Listen for 3D clicks
+      // Listen for draw events
+      viewer3dDiv.addEventListener('draw-point', (e) => {
+        const { x, y, z, count } = e.detail;
+        drawStatus.style.display = 'inline';
+        drawStatus.textContent = `${count} točk — klik za naslednjo, [Zaključi] za poligon`;
+        if (count >= 3) btnFinish3d.style.display = 'inline-block';
+      });
+
+      viewer3dDiv.addEventListener('draw-finish', (e) => {
+        const { name, points } = e.detail;
+        drawStatus.textContent = `Cona "${name}" shranjena (${points.length} točk)`;
+        setTimeout(() => { drawStatus.style.display = 'none'; }, 3000);
+      });
+
+      // Listen for info clicks (not drawing)
       viewer3dDiv.addEventListener('terrain-click', (e) => {
         const { x, y, z, meshName } = e.detail;
         loading3d.style.display = 'block';
@@ -766,7 +785,49 @@
     return null;
   }
 
-  btn2d.addEventListener('click', () => switchMode('2d'));
+  const btnDraw3d = document.getElementById('btn-draw3d');
+  const btnFinish3d = document.getElementById('btn-finish3d');
+  const btnCancel3d = document.getElementById('btn-cancel3d');
+  const drawStatus = document.getElementById('draw3d-status');
+
+  btnDraw3d.addEventListener('click', () => {
+    if (!viewer) return;
+    viewer.startDrawing();
+    btnDraw3d.style.display = 'none';
+    btnCancel3d.style.display = 'inline-block';
+    drawStatus.style.display = 'inline';
+    drawStatus.textContent = 'Klikni na teren za prvo točko...';
+  });
+
+  btnFinish3d.addEventListener('click', () => {
+    if (!viewer) return;
+    const name = prompt('Ime 3D cone:', 'nova_cona_3d');
+    if (!name) { viewer.cancelDrawing(); }
+    else {
+      const color = '#' + Math.floor(Math.random()*0xFFFFFF).toString(16).padStart(6,'0');
+      viewer.finishDrawing(name, color);
+    }
+    btnDraw3d.style.display = 'inline-block';
+    btnFinish3d.style.display = 'none';
+    btnCancel3d.style.display = 'none';
+  });
+
+  btnCancel3d.addEventListener('click', () => {
+    if (viewer) viewer.cancelDrawing();
+    btnDraw3d.style.display = 'inline-block';
+    btnFinish3d.style.display = 'none';
+    btnCancel3d.style.display = 'none';
+    drawStatus.style.display = 'none';
+  });
+
+  btn2d.addEventListener('click', () => {
+    if (viewer && viewer.drawingMode) viewer.cancelDrawing();
+    btnDraw3d.style.display = 'none';
+    btnFinish3d.style.display = 'none';
+    btnCancel3d.style.display = 'none';
+    drawStatus.style.display = 'none';
+    switchMode('2d');
+  });
   btn3d.addEventListener('click', () => switchMode('3d'));
 </script>
 </body>

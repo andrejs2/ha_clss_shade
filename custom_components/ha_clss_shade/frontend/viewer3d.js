@@ -34,6 +34,13 @@ export class TerrainViewer {
     this.mouse = new THREE.Vector2();
     this.terrainData = null;
     this._animating = false;
+
+    // Zone drawing state
+    this.drawingMode = false;
+    this.currentZonePoints = [];    // [{x,y,z}, ...]
+    this.currentZoneMarkers = [];   // Three.js spheres
+    this.currentZoneLines = null;   // Three.js Line
+    this.completedZones = [];       // [{name, points, mesh}, ...]
   }
 
   init() {
@@ -304,37 +311,189 @@ export class TerrainViewer {
     console.log(`Skirt walls: ${wallPositions.length / 18} quads`);
   }
 
-  _onClick(event) {
+  // ─── Zone Drawing ───
+
+  startDrawing() {
+    this.drawingMode = true;
+    this.currentZonePoints = [];
+    this._clearCurrentMarkers();
+    this.controls.enableRotate = true; // still allow orbit
+    this.container.dispatchEvent(new CustomEvent('draw-start'));
+  }
+
+  cancelDrawing() {
+    this.drawingMode = false;
+    this.currentZonePoints = [];
+    this._clearCurrentMarkers();
+    this.container.dispatchEvent(new CustomEvent('draw-cancel'));
+  }
+
+  finishDrawing(zoneName, zoneColor) {
+    if (this.currentZonePoints.length < 3) {
+      this.cancelDrawing();
+      return null;
+    }
+
+    const points = [...this.currentZonePoints];
+    const mesh = this._createZonePolygonMesh(points, zoneColor || '#2196F3');
+    this.scene.add(mesh);
+
+    const zone = { name: zoneName, color: zoneColor, points, mesh };
+    this.completedZones.push(zone);
+
+    this.drawingMode = false;
+    this.currentZonePoints = [];
+    this._clearCurrentMarkers();
+
+    this.container.dispatchEvent(new CustomEvent('draw-finish', {
+      detail: { name: zoneName, points }
+    }));
+
+    return zone;
+  }
+
+  _addDrawPoint(point) {
+    this.currentZonePoints.push({ x: point.x, y: point.y, z: point.z });
+
+    // Red sphere marker
+    const sphere = new THREE.Mesh(
+      new THREE.SphereGeometry(0.6, 12, 12),
+      new THREE.MeshBasicMaterial({ color: 0xff2222 })
+    );
+    sphere.position.copy(point);
+    this.scene.add(sphere);
+    this.currentZoneMarkers.push(sphere);
+
+    // Update connecting line
+    this._updateDrawLine();
+
+    this.container.dispatchEvent(new CustomEvent('draw-point', {
+      detail: {
+        x: point.x, y: point.y, z: point.z,
+        count: this.currentZonePoints.length
+      }
+    }));
+  }
+
+  _updateDrawLine() {
+    // Remove old line
+    if (this.currentZoneLines) {
+      this.scene.remove(this.currentZoneLines);
+      this.currentZoneLines.geometry.dispose();
+    }
+
+    if (this.currentZonePoints.length < 2) return;
+
+    const linePoints = this.currentZonePoints.map(
+      p => new THREE.Vector3(p.x, p.y, p.z)
+    );
+    // Close the loop preview
+    linePoints.push(linePoints[0].clone());
+
+    const geo = new THREE.BufferGeometry().setFromPoints(linePoints);
+    const mat = new THREE.LineBasicMaterial({ color: 0xff4444, linewidth: 2 });
+    this.currentZoneLines = new THREE.Line(geo, mat);
+    this.scene.add(this.currentZoneLines);
+  }
+
+  _clearCurrentMarkers() {
+    for (const m of this.currentZoneMarkers) {
+      this.scene.remove(m);
+      m.geometry.dispose();
+      m.material.dispose();
+    }
+    this.currentZoneMarkers = [];
+    if (this.currentZoneLines) {
+      this.scene.remove(this.currentZoneLines);
+      this.currentZoneLines.geometry.dispose();
+      this.currentZoneLines = null;
+    }
+  }
+
+  _createZonePolygonMesh(points, color) {
+    // Create a semi-transparent polygon mesh from 3D points
+    // Uses fan triangulation from centroid
+    const group = new THREE.Group();
+    group.name = 'zone';
+
+    const cx = points.reduce((s, p) => s + p.x, 0) / points.length;
+    const cy = points.reduce((s, p) => s + p.y, 0) / points.length;
+    const cz = points.reduce((s, p) => s + p.z, 0) / points.length;
+
+    const positions = [];
+    for (let i = 0; i < points.length; i++) {
+      const a = points[i];
+      const b = points[(i + 1) % points.length];
+      positions.push(cx, cy, cz, a.x, a.y, a.z, b.x, b.y, b.z);
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geo.computeVertexNormals();
+
+    const col = new THREE.Color(color);
+    const mat = new THREE.MeshBasicMaterial({
+      color: col, transparent: true, opacity: 0.35,
+      side: THREE.DoubleSide, depthWrite: false,
+    });
+    group.add(new THREE.Mesh(geo, mat));
+
+    // Outline
+    const outlinePoints = points.map(p => new THREE.Vector3(p.x, p.y, p.z));
+    outlinePoints.push(outlinePoints[0].clone());
+    const lineGeo = new THREE.BufferGeometry().setFromPoints(outlinePoints);
+    const lineMat = new THREE.LineBasicMaterial({ color: col, linewidth: 2 });
+    group.add(new THREE.Line(lineGeo, lineMat));
+
+    // Corner spheres
+    for (const p of points) {
+      const s = new THREE.Mesh(
+        new THREE.SphereGeometry(0.4, 8, 8),
+        new THREE.MeshBasicMaterial({ color: col })
+      );
+      s.position.set(p.x, p.y, p.z);
+      group.add(s);
+    }
+
+    return group;
+  }
+
+  // ─── Raycasting ───
+
+  _raycastTerrain(event) {
     const rect = this.renderer.domElement.getBoundingClientRect();
     this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
     this.raycaster.setFromCamera(this.mouse, this.camera);
 
-    if (!this.terrainGroup) return;
+    if (!this.terrainGroup) return null;
     const meshes = [];
     this.terrainGroup.traverse(c => { if (c.isMesh) meshes.push(c); });
 
     const intersects = this.raycaster.intersectObjects(meshes);
     if (intersects.length > 0) {
-      const hit = intersects[0];
-      const p = hit.point;
-      const meshName = hit.object.name || '?';
-      console.log(`3D click: (${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)}) on ${meshName}`);
-
-      // Visual feedback: small sphere at click point
-      const sphere = new THREE.Mesh(
-        new THREE.SphereGeometry(0.5, 8, 8),
-        new THREE.MeshBasicMaterial({ color: 0xff2222 })
-      );
-      sphere.position.copy(p);
-      this.scene.add(sphere);
-
-      // Dispatch custom event for zone drawing integration
-      this.container.dispatchEvent(new CustomEvent('terrain-click', {
-        detail: { x: p.x, y: p.y, z: p.z, meshName }
-      }));
+      return { point: intersects[0].point, meshName: intersects[0].object.name || '?' };
     }
+    return null;
+  }
+
+  _onClick(event) {
+    const hit = this._raycastTerrain(event);
+    if (!hit) return;
+
+    const { point, meshName } = hit;
+
+    if (this.drawingMode) {
+      this._addDrawPoint(point);
+      return;
+    }
+
+    // Not drawing — just info click
+    console.log(`3D click: (${point.x.toFixed(1)}, ${point.y.toFixed(1)}, ${point.z.toFixed(1)}) on ${meshName}`);
+    this.container.dispatchEvent(new CustomEvent('terrain-click', {
+      detail: { x: point.x, y: point.y, z: point.z, meshName }
+    }));
   }
 
   _animate() {
