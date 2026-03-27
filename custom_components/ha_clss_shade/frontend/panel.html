@@ -44,6 +44,19 @@
       position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
       color: #888; font-size: 14px; z-index: 10;
     }
+    .layer-controls {
+      position: absolute; top: 8px; left: 8px; z-index: 10;
+      background: rgba(30,30,46,0.9); border-radius: 8px; padding: 8px 12px;
+      border: 1px solid #444; display: none;
+    }
+    .layer-controls.active { display: block; }
+    .layer-controls h3 { font-size: 12px; color: #888; margin-bottom: 6px; }
+    .layer-toggle {
+      display: flex; align-items: center; gap: 6px; padding: 3px 0;
+      font-size: 13px; cursor: pointer; user-select: none;
+    }
+    .layer-toggle input { accent-color: #2563eb; }
+    .layer-toggle:hover { color: #fff; }
 
     /* Zone list sidebar */
     .sidebar {
@@ -161,7 +174,16 @@
 </div>
 
 <div id="map"></div>
-<div id="viewer3d"><div id="loading3d">Nalagam 3D teren...</div></div>
+<div id="viewer3d">
+  <div id="loading3d">Nalagam 3D teren...</div>
+  <div class="layer-controls" id="layer-controls">
+    <h3>Sloji</h3>
+    <label class="layer-toggle"><input type="checkbox" data-layer="ground" checked> Tla</label>
+    <label class="layer-toggle"><input type="checkbox" data-layer="buildings" checked> Stavbe</label>
+    <label class="layer-toggle"><input type="checkbox" data-layer="vegetation" checked> Vegetacija</label>
+    <label class="layer-toggle"><input type="checkbox" data-layer="walls" checked> Stene</label>
+  </div>
+</div>
 
 <div class="sidebar" id="sidebar">
   <h2>Cone</h2>
@@ -736,6 +758,15 @@
       terrainLoaded = true;
       loading3d.style.display = 'none';
       btnDraw3d.style.display = 'inline-block';
+
+      // Show layer controls and wire up toggles
+      const layerCtrl = document.getElementById('layer-controls');
+      layerCtrl.classList.add('active');
+      layerCtrl.querySelectorAll('input[data-layer]').forEach(cb => {
+        cb.addEventListener('change', () => {
+          viewer.toggleLayer(cb.dataset.layer, cb.checked);
+        });
+      });
 
       // Load saved 3D zones
       try {

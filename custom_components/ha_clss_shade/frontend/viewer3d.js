@@ -184,48 +184,61 @@ export class TerrainViewer {
     groundMesh.name = 'ground';
     this.terrainGroup.add(groundMesh);
 
-    // --- Build surface mesh from DSM (buildings, trees on top of ground) ---
-    const surfGeo = new THREE.PlaneGeometry(
-      cols * res, rows * res,
-      cols - 1, rows - 1
-    );
-    surfGeo.rotateX(-Math.PI / 2);
+    // --- Build separate meshes for buildings and vegetation ---
+    // Each gets its own mesh so user can toggle visibility independently.
+    // Only elevated cells (HAG > 1.5m) go into these; the rest stays in ground.
+    const ELEV_THRESHOLD = 1.5;
+    const BUILDING_CLASSES = new Set([6]);
+    const VEGETATION_CLASSES = new Set([3, 4, 5]);
 
-    const surfPos = surfGeo.attributes.position.array;
-    const surfColors = new Float32Array(surfPos.length);
+    for (const [layerName, classSet, color_bright] of [
+      ['buildings', BUILDING_CLASSES, 1.15],
+      ['vegetation', VEGETATION_CLASSES, 1.1],
+    ]) {
+      const geo = new THREE.PlaneGeometry(cols * res, rows * res, cols - 1, rows - 1);
+      geo.rotateX(-Math.PI / 2);
+      const pos = geo.attributes.position.array;
+      const colors = new Float32Array(pos.length);
 
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        const gridIdx = r * cols + c;
-        const vertIdx = (rows - 1 - r) * cols + c;
-        const vi3 = vertIdx * 3;
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const gridIdx = r * cols + c;
+          const vertIdx = (rows - 1 - r) * cols + c;
+          const vi3 = vertIdx * 3;
 
-        surfPos[vi3 + 1] = dsm[gridIdx] - baseH;
+          const hag = dsm[gridIdx] - dtm[gridIdx];
+          const isThisLayer = classSet.has(cls[gridIdx]) && hag > ELEV_THRESHOLD;
 
-        const clsCode = cls[gridIdx];
-        const rgb = CLASS_COLORS[clsCode] || DEFAULT_COLOR;
+          // Elevated features at DSM height; everything else collapses to DTM
+          pos[vi3 + 1] = isThisLayer ? (dsm[gridIdx] - baseH) : (dtm[gridIdx] - baseH);
 
-        // Brighten elevated features slightly
-        const hag = dsm[gridIdx] - dtm[gridIdx];
-        const bright = hag > 1.5 ? 1.15 : 1.0;
-        surfColors[vi3] = Math.min(1, rgb[0] * bright);
-        surfColors[vi3 + 1] = Math.min(1, rgb[1] * bright);
-        surfColors[vi3 + 2] = Math.min(1, rgb[2] * bright);
+          if (isThisLayer) {
+            const rgb = CLASS_COLORS[cls[gridIdx]] || DEFAULT_COLOR;
+            colors[vi3] = Math.min(1, rgb[0] * color_bright);
+            colors[vi3 + 1] = Math.min(1, rgb[1] * color_bright);
+            colors[vi3 + 2] = Math.min(1, rgb[2] * color_bright);
+          } else {
+            // Transparent — collapse to ground and use ground color
+            colors[vi3] = 0; colors[vi3 + 1] = 0; colors[vi3 + 2] = 0;
+          }
+        }
       }
+
+      geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      geo.computeVertexNormals();
+
+      const mat = new THREE.MeshLambertMaterial({
+        vertexColors: true,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.95,
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      mesh.name = layerName;
+      this.terrainGroup.add(mesh);
     }
-
-    surfGeo.setAttribute('color', new THREE.BufferAttribute(surfColors, 3));
-    surfGeo.computeVertexNormals();
-
-    const surfMat = new THREE.MeshLambertMaterial({
-      vertexColors: true,
-      side: THREE.DoubleSide,
-    });
-    const surfMesh = new THREE.Mesh(surfGeo, surfMat);
-    surfMesh.castShadow = true;
-    surfMesh.receiveShadow = true;
-    surfMesh.name = 'surface';
-    this.terrainGroup.add(surfMesh);
 
     // --- Build skirt walls for buildings ---
     this._buildSkirtWalls(dsm, dtm, cls, rows, cols, res, baseH);
@@ -309,6 +322,28 @@ export class TerrainViewer {
     this.terrainGroup.add(wallMesh);
 
     console.log(`Skirt walls: ${wallPositions.length / 18} quads`);
+  }
+
+  // ─── Layer Visibility ───
+
+  toggleLayer(name, visible) {
+    if (!this.terrainGroup) return;
+    this.terrainGroup.traverse(c => {
+      if (c.name === name) c.visible = visible;
+    });
+  }
+
+  getLayerNames() {
+    return ['ground', 'buildings', 'vegetation', 'walls'];
+  }
+
+  isLayerVisible(name) {
+    let vis = true;
+    if (!this.terrainGroup) return vis;
+    this.terrainGroup.traverse(c => {
+      if (c.name === name) vis = c.visible;
+    });
+    return vis;
   }
 
   // ─── Zone Drawing ───
