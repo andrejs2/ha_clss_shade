@@ -106,7 +106,12 @@ napovedjo (oblacnost) in performance faktorjem → natancna napoved PV proizvodn
 - [ ] Sklearn korekcija na rezidualih (ko imamo mesec+ podatkov) — à la EMHASS ML adjustment
 - [ ] Clustering po vremenskih tipih — ločene cloud krivulje za jasno/delno oblačno/oblačno
 - [ ] WebSocket API za real-time shadow map streaming v frontend
-- [ ] 3D vizualizacija sencenja v frontend panelu (kot clss.si pregledovalnik)
+- [ ] **Faza 5: 3D zone editor** — Three.js viewer + skirt walls + 3D raycasting za cone
+  - [ ] DSM→Three.js mesh + satelitska tekstura + barvanje po klasifikaciji
+  - [ ] Skirt walls za stavbe (vertikalne stene, klikljive na katerikoli višini)
+  - [ ] 3D zone drawing z raycasting (tla, streha, fasada, pod napuščem)
+  - [ ] Shadow engine razširitev: `is_point_in_sun_3d(x, y, z, sun, dsm)`
+  - [ ] Use cases: žaluzije (fasada), terasa pod napuščem, PV na bloku, okna v nadstropju
 
 ---
 

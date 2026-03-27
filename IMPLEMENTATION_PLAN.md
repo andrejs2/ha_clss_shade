@@ -113,27 +113,119 @@ napredno upravljanje sencenja, zalivanja in predikcijo PV proizvodnje.
 - [ ] Temperaturni podatki -> ali je sencenje zazeleno
 - [ ] Avtomatizacija rolet/zunanjih sencil
 
-### 4.4 Frontend panel (opcijsko)
-- [ ] WebSocket API za interaktivni prikaz
-- [ ] 3D vizualizacija sencenja na karti
+### 4.4 Frontend panel — 2D editor (obstoječe)
+- [x] Leaflet karta s satelitsko podlago
+- [x] Leaflet.Draw za risanje poligonov
+- [x] WebSocket API za shranjevanje/nalaganje con
+- [x] Shadow overlay na karti
 - [ ] Casovna os: animacija sence skozi dan
 
 ---
 
-## Faza 5: HACS in objava
+## Faza 5: 3D zone editor — KILLER FEATURE
 
-### 5.1 HACS kompatibilnost
+Edinstvena funkcionalnost v HA ekosistemu: interaktivno 3D zoniranje na LiDAR modelu.
+Omogoca zoniranje na **katerikoli povrsini** — tla, streha, fasada, pod napuscem, okna v bloku.
+
+### 5.1 Three.js 3D viewer (osnova)
+- [ ] DSM heightmap → Three.js PlaneGeometry mesh (800×800 grid, ~640K trikotnikov)
+- [ ] DTM kot locen spodnji mesh (za tla pod stavbami)
+- [ ] Barvanje po klasifikaciji: stavbe=siva, vegetacija=zelena, tla=rjava
+- [ ] Satelitska tekstura iz WMS (DOF ali Esri) na ground mesh
+- [ ] OrbitControls: vrtenje, zoom, pan z misko
+- [ ] Preklop [2D] ↔ [3D] gumb v panelu
+- [ ] Base64 prenos DSM/DTM/classification iz backend-a prek WebSocket
+
+### 5.2 Skirt walls — vertikalne povrsine stavb
+- [ ] Detekcija robov v DSM: celice z veliko vissinsko razliko (>1.5m)
+- [ ] Generiranje vertikalnih quad meshev (stene) od DTM do DSM
+  ```
+  DSM[i,j]=8m, DSM[i+1,j]=0m → stena 0m→8m na robu
+  ```
+- [ ] Stene so del raycasting mesha — klikljive na katerikoli visini
+- [ ] LOD: stene samo za stavbe blizje od 100m (performance)
+
+### 5.3 3D zone drawing
+- [ ] Raycasting iz miske na mesh (tla + streha + stene): Three.js Raycaster
+  ```javascript
+  raycaster.setFromCamera(mouse, camera);
+  const hit = raycaster.intersectObjects([groundMesh, wallMesh, roofMesh]);
+  // hit[0].point = {x, y, z} — tocen 3D polozaj klika
+  ```
+- [ ] Rezim "Nova cona": klik za postavljanje tock, double-klik za zakljucek
+- [ ] Vizualizacija: tocke kot sfere, povezave kot crte, zapolnjen poligon
+- [ ] Poligon se "prilepi" na mesh povrsino (tla, stena, streha)
+- [ ] Podpora za razlicne tipe con:
+  - **Horizontalna** (tla, streha, terasa) — kot zdaj
+  - **Vertikalna** (fasada, okna) — tocke na steni
+  - **Pod napuscem** — tocke na tleh pod streho
+  - **Mesana** — tocke na razlicnih povrsninah
+- [ ] Shranjevanje: 3D koordinate [{x, y, z}, ...] v config entry
+- [ ] WebSocket endpoint za CRUD operacije nad 3D conami
+
+### 5.4 Shadow engine razsiritev za 3D cone
+- [ ] Nova funkcija: `is_point_in_sun_3d(x, y, z, sun, dsm)`
+  - Zacne ray-march na (x, y, z) namesto dsm[y][x]
+  - Sledi zarku proti soncu cez DSM grid
+  - Vrne True/False (sonce/senca)
+- [ ] `compute_zone_sun_3d(zone_points_3d, dsm, sun)` → sun_percent
+  - Za vsako tocko v coni: trace ray iz (x,y,z)
+  - Vkljucuje interpolacijo med tockami za vecjo natancnost
+- [ ] Backward compatible: obstojoce 2D cone delajo kot prej
+- [ ] Vertikalne cone: sun_percent na fasadi za zaluzije
+
+### 5.5 Primeri uporabe — 3D cone
+
+```
+Stolpnica (blok), fasada JZ:
+  Tocke na steni od z=9m do z=12m (4. nadstropje)
+  → Senzor: "okna_4nadstropje_sun_percent: 67%"
+  → Avtomatizacija: zapri zaluzije ko sun% > 50
+
+Hisa, terasa pod napuscem:
+  Tocke na tleh (z=0) pod stresnim napuscem (3.5m)
+  → Senzor: "terasa_napusc_sun_percent: 0%" (poleti)
+  → Senzor: "terasa_napusc_sun_percent: 85%" (pozimi)
+
+PV paneli na strehi bloka:
+  Tocke na strehi (z=15m) → natancna senca od sosednjega bloka
+  → Boljse kot 2D ker uposteva visino obeh stavb
+```
+
+### 5.6 UI/UX
+- [ ] Toolbar: [2D] [3D] [Sonce/Senca] [Napoved] [+ Cona]
+- [ ] Casovni drsnik: pomikaj cas, glej kako se senca premika v 3D
+- [ ] Seznam con v stranskem panelu z sun% in barvnim indikatorjem
+- [ ] Fly mode (WASD + miska) za "sprehod" skozi model (opcijsko)
+- [ ] Mobilna podpora: touch orbit controls
+
+### 5.7 Tehnicni stack
+| Komponenta | Tehnologija |
+|---|---|
+| 3D rendering | Three.js (ES modules, CDN) |
+| Kamera | OrbitControls + opcijski FlyControls |
+| 2D karta | Leaflet (obstoječe) |
+| Raycasting | Three.js Raycaster |
+| Podatkovni prenos | WebSocket + base64 float32 arrayi |
+| Panel hosting | HA async_register_built_in_panel (iframe) |
+| Brez build toolchaina | En HTML file, CDN knjiznice |
+
+---
+
+## Faza 6: HACS in objava
+
+### 6.1 HACS kompatibilnost
 - [ ] hacs.json konfiguracija
 - [ ] GitHub Actions (hassfest + HACS validation)
 - [ ] Brands submission (icon)
 - [ ] README z HACS install gumbom
 
-### 5.2 Testiranje
+### 6.2 Testiranje
 - [ ] Unit testi za geo.py, rasterizer.py, shadow_engine.py
 - [ ] Integration testi za config_flow
 - [ ] Test z realnimi CLSS podatki (Ljubljana)
 
-### 5.3 Dokumentacija
+### 6.3 Dokumentacija
 - [ ] README.md z navodili za namestitev
 - [ ] Primeri avtomatizacij (blueprints)
 - [ ] Screenshots
