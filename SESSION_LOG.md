@@ -233,3 +233,48 @@ Popravki: senzorji ponoči, race condition, avalanche treeline bug.
 - Perzistenten performance factor (shranjevanje v datoteko)
 - Per-zone panel tilt/azimut (format `cona:Wp:nagib:azimut`)
 - Natančnost tracking: napoved vs realno (dnevna primerjava)
+
+---
+
+## Seja 4 — 2026-03-27
+
+### Povzetek
+Raziskava akademskih člankov in EMHASS repo za izboljšave PV forecasta.
+Implementacija treh "low-hanging fruit" izboljšav solarnega modela.
+
+### Raziskano
+- **Paper 1** (Haupt et al., Energies 18/11/2692): Hybrid TBATS + ML za PV forecast, 2-3% nMAPE
+- **Paper 2** (Aksan et al., Energies 18/6/1378): MLP + clustering, RMSE 1.75
+- **EMHASS** (github.com/davidusb-geek/emhass): Energijski optimizer za HA s pvlib, ML korekcijo, mixed blending
+
+### Ključne ugotovitve iz raziskave
+- EMHASS cloud formula: `ghi = (0.35 + 0.65 * (1 - cloud)) * clearsky_ghi` — bolj realistična
+- Haurwitz clear-sky model: preprost, brez dependencyjev, dovolj natančen
+- Temperature derating: -0.35%/°C nad STC (25°C) — standardni pristop
+- TBATS/ML korekcija: koristno šele ko imamo mesec+ podatkov
+- Clustering po vremenskih tipih: ideja za prihodnost
+
+### Implementirano
+1. **Haurwitz clear-sky GHI model** — zamenjal fiksnih 800 W/m² z dinamičnim izračunom
+   - Poletno opoldne: ~900 W/m², zimsko opoldne: ~300 W/m²
+   - Največji vpliv: zimska napoved NI VEČ 2.4x precenjena!
+2. **EMHASS-stil cloud formula** — 35% difuzni floor pri popolni oblačnosti (prej 25%)
+3. **Temperature derating** — -0.35%/°C z NOCT modelom (cell = ambient + 20°C)
+4. **Razdeljene sistemske izgube** — 5% (inverter+wiring) + ločen temp faktor (prej flat 8%)
+
+### Spremembe
+- **forecast.py**: clear-sky GHI, nova cloud formula, temp derating v assemble_pv_forecast()
+- **weather_bridge.py**: compute_clearsky_ghi(), compute_temperature_derating(), posodobljen estimate_pv_power()
+- **coordinator.py**: posredovanje sun_elevation, day_of_year, temperature v estimate_pv_power()
+- **Commiti**: 1 (a1e140e)
+
+### Odprta vprašanja
+- Kako se novi model obnaša v praksi? Dan 1 testiranja je bil včeraj, danes je dan 2.
+- Performance EMA se bo moral resetirati (drugačen model = drugačen faktor)
+- Ali bo Haurwitz dovolj natančen za Slovenijo? (atmosferska motnost)
+
+### Naslednji koraki
+- Testirati novi model na HA instanci in primerjati z forecast.solar
+- INCA/forecast blending (ko imamo INCA za bližnjo prihodnost, forecast za daljšo)
+- Perzistenten performance factor
+- Ko naberemo mesec podatkov: sklearn korekcija (à la EMHASS ML adjustment)

@@ -102,6 +102,9 @@ napovedjo (oblacnost) in performance faktorjem → natancna napoved PV proizvodn
 - [ ] Multi-home podpora: vec lokacij v eni HA instanci (ze podprto prek config flow)
 - [ ] Historicni podatki: primerjava LSS (stari) vs CLSS (novi) za detekcijo sprememb
 - [ ] Integracija z Solcast ali Forecast.Solar za primerjavo PV napovedi
+- [ ] INCA/forecast blending — INCA za 0-2h, ARSO forecast za 2-48h (utežen prehod)
+- [ ] Sklearn korekcija na rezidualih (ko imamo mesec+ podatkov) — à la EMHASS ML adjustment
+- [ ] Clustering po vremenskih tipih — ločene cloud krivulje za jasno/delno oblačno/oblačno
 - [ ] WebSocket API za real-time shadow map streaming v frontend
 - [ ] 3D vizualizacija sencenja v frontend panelu (kot clss.si pregledovalnik)
 
