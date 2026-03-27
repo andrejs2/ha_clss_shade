@@ -280,14 +280,37 @@ Implementacija treh "low-hanging fruit" izboljšav solarnega modela.
 - Temp koeficient posodobljen na -0.34% (JinkoSolar spec)
 - Paneli: 35° nagib, 220° azimut (SSW) — pojasni popoldanski peak
 
+### Bugi popravljeni
+- **INCA aiohttp import** — `aiohttp` je bil le v `TYPE_CHECKING` bloku, kar je povzročilo `NameError` med izvajanjem. Premaknjeno v runtime import.
+- **INCA si0zm pokritost** — odkrili da INCA sončno sevanje pokriva le JV Slovenijo (Novo mesto, Posavje). Ljubljana, Maribor, Celje, Koper = brez podatkov (transparent pixel).
+
+### Open-Meteo GHI fallback
+- Dodana `openmeteo_client.py` — brezplačen, brez API ključa, globalno pokritje, 15-min resolucija
+- Prioritetna veriga: INCA (1km) → **Open-Meteo** (global) → cloud model
+- Test: Open-Meteo vrne ~560 W/m² za Ljubljano ob 100% ARSO oblačnosti — bolj realno od cloud modela (240 W/m²)
+
+### Testiranje na HA
+- Ob zagonu napovedi "Neznano" ~15 min (shadow forecast se računa v ozadju, 126 korakov)
+- Po izračunu: danes=21.9 kWh, jutri=34.8 kWh, 5 dni=139.2 kWh
+- PV ocena=428W pri 100% oblačnosti (cloud model) vs realno=1384W → performance factor 3.2
+- Z Open-Meteo bo PV ocena bližje realnosti (~560 W/m² GHI namesto 240)
+
 ### Odprta vprašanja
 - Kaj je jutranja ovira? (drevo, stavba, hrib) — LiDAR shadow engine bo pokazal
-- Ali sta oba niza (pv_visja/pv_nizja) istega nagiba in azimuta?
-- Performance EMA se bo moral resetirati (drugačen model)
+- Ali sta oba niza (pv_visja/pv_nizja) istega nagiba in azimuta? → Da, 35°/220°
+- Performance EMA se bo moral resetirati po Open-Meteo integraciji
+- Ali Open-Meteo GHI zadostuje ali potrebujemo še urni forecast?
+
+### Commiti
+- `9faf7bf` Fix INCA client: import aiohttp at runtime
+- `d5eb4eb` Add Open-Meteo GHI as fallback when INCA has no coverage
+- `499d6bb` Update temp coefficient to JinkoSolar spec (-0.34%)
+- `d866460` Add SolarEdge API docs and monthly weather factors
+- `a1e140e` Replace fixed 800 W/m² with Haurwitz clear-sky model
 
 ### Naslednji koraki
-- Testirati novi model na HA instanci in primerjati z forecast.solar
-- INCA/forecast blending (ko imamo INCA za bližnjo prihodnost, forecast za daljšo)
+- Testirati Open-Meteo na HA instanci — ali performance factor konvergira proti ~1.0
+- Open-Meteo urni GHI forecast za forecast.py (namesto cloud modela)
 - Perzistenten performance factor
 - Mesečni weather faktorji kot fallback v forecast.py
 - Ko naberemo mesec podatkov: sklearn korekcija (à la EMHASS ML adjustment)
