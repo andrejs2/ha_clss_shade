@@ -343,8 +343,77 @@ Implementacija treh "low-hanging fruit" izboljšav solarnega modela.
 - `c54a9ef` Fix satellite texture orientation
 
 ### Naslednji koraki (Seja 5)
-- Horizon profil iz DEM za daljnje hribe
-- DTM gap-fill izboljšava (interpolacija pod drevesi)
-- Open-Meteo urni GHI forecast za forecast.py
-- Perzistenten performance factor
+- ~~Horizon profil iz DEM za daljnje hribe~~ DONE
+- ~~DTM gap-fill izboljšava (interpolacija pod drevesi)~~ DONE
+- ~~Open-Meteo urni GHI forecast za forecast.py~~ DONE
+- ~~Perzistenten performance factor~~ DONE
 - Mesečni weather faktorji kot fallback
+
+---
+
+## Seja 5 — 2026-03-27
+
+### Povzetek
+Štiri izboljšave: DEM horizon profil za daljnje hribe, DTM gap-fill brez umetnih grbov,
+Open-Meteo urni GHI za PV forecast, perzistenten performance factor.
+
+### Narejeno
+
+#### 1. DEM Horizon profil (clss_data/horizon.py — nov modul)
+- **Open-Meteo elevation API** (Copernicus 30m DEM, brezplačen, brez API ključa)
+- Vzorčenje: 72 azimutov (vsakih 5°) × 20 razdalj (300m–5km, korak 250m) = 1440 točk
+- Batch API klici (po 100 točk) → izračun max horizon kota za vsak azimut
+- `HorizonProfile` dataclass z `is_sun_visible(azimuth, elevation)` metodo
+- Linearna interpolacija med vzorčenimi azimuti
+- Cache v `horizon_profile.npz` (naloži se ob zagonu, izračuna enkrat)
+- Integriran v:
+  - `compute_shadow_map()` — preskočen shadow calc ko sonce pod terenom
+  - `compute_shadow_forecast()` — preskočen step ko sonce pod terenom (optimizacija!)
+  - `is_point_in_sun_3d()` — 3D cone tudi upoštevajo horizon
+  - `compute_3d_zone_sun_percent()` — posreduje horizon
+  - `compute_daily_sun_hours()` — posreduje horizon
+
+#### 2. DTM gap-fill izboljšava (rasterizer.py)
+- **Prej**: DTM luknje zapolnjene z DSM → pod drevesi DTM = vrh krošnje → umetne grbine
+- **Zdaj**: `_fill_nan_nearest()` interpolira samo iz ground-classified celic
+- Odstranjena vrstica `dtm[dtm_gaps] = dsm[dtm_gaps]`
+- Rezultat: gladek teren pod vegetacijo, brez umetnih grbov
+
+#### 3. Open-Meteo urni GHI forecast (openmeteo_client.py + forecast.py)
+- Nova funkcija `fetch_openmeteo_forecast()`:
+  - Urna resolucija (24h × 5 dni = 120 podatkovnih točk)
+  - Vrne: `shortwave_radiation` (GHI W/m²), `temperature_2m`, `cloud_cover`
+  - Brezplačen, brez API ključa, globalna pokritost
+  - Isti ECMWF/Copernicus modeli kot profesionalne storitve
+- `forecast.py` — `assemble_pv_forecast()` posodobljen:
+  - Primarno: Open-Meteo GHI (že vključuje oblačnost!)
+  - Fallback: EMHASS-stil cloud model iz ARSO oblačnosti
+  - `interpolate_weather()` podpira novo `ghi` polje
+- `coordinator.py`:
+  - `_merge_weather_sources()`: združi Open-Meteo GHI + ARSO padavine
+  - `_async_refresh_openmeteo_forecast()`: fetch vsake 30 min
+  - Vzporedni refresh: ARSO weather + Open-Meteo vsak cikel
+
+#### 4. Perzistenten performance factor (coordinator.py)
+- `_save_performance_factor()`: JSON z EMA + timestamp v `data_dir/performance_factor.json`
+- `_load_performance_factor()`: naloži ob zagonu v `async_setup()`
+- Shranjevanje ob vsakem EMA update (po `update_performance_ema()`)
+- EMA preživi restart HA brez resetiranja na 1.0
+
+### Spremembe
+- **Nova datoteka**: `clss_data/horizon.py` (~210 vrstic)
+- **Spremenjene**: rasterizer.py, shadow_engine.py, forecast.py, openmeteo_client.py, coordinator.py, CLAUDE.md, TODO.md
+- **Commiti**: 1 (9193ee3)
+
+### Odprta vprašanja
+- Horizon profil: ali 5km zadostuje za vse lokacije v Sloveniji? (planine morda potrebujejo 10km)
+- Open-Meteo forecast: validacija z realnimi SolarEdge podatki (primerjava GHI vs dejanska proizvodnja)
+- DTM gap-fill: ali je nearest-neighbor dovolj gladek ali bi potrebovali IDW/kriging?
+- Mesečni weather faktorji kot fallback: še ni implementirano
+
+### Naslednji koraki (Seja 6)
+- Testirati na HA instanci z vsemi štirimi izboljšavami
+- Validirati horizon profil s SolarEdge jutranjimi podatki (11% ob 8:00)
+- Mesečni weather faktorji kot fallback za dneve brez Open-Meteo
+- Per-zone panel tilt/azimut format (cona:Wp:nagib:azimut)
+- Natančnost tracking: napoved vs realno
