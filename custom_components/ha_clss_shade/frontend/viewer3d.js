@@ -212,14 +212,17 @@ export class TerrainViewer {
           // Elevated features at DSM height; everything else collapses to DTM
           pos[vi3 + 1] = isThisLayer ? (dsm[gridIdx] - baseH) : (dtm[gridIdx] - baseH);
 
+          // Color: layer features get brightened classification color,
+          // non-layer cells get ground color (seamless blend with ground mesh)
+          const rgb = CLASS_COLORS[cls[gridIdx]] || DEFAULT_COLOR;
           if (isThisLayer) {
-            const rgb = CLASS_COLORS[cls[gridIdx]] || DEFAULT_COLOR;
             colors[vi3] = Math.min(1, rgb[0] * color_bright);
             colors[vi3 + 1] = Math.min(1, rgb[1] * color_bright);
             colors[vi3 + 2] = Math.min(1, rgb[2] * color_bright);
           } else {
-            // Transparent — collapse to ground and use ground color
-            colors[vi3] = 0; colors[vi3 + 1] = 0; colors[vi3 + 2] = 0;
+            colors[vi3] = rgb[0];
+            colors[vi3 + 1] = rgb[1];
+            colors[vi3 + 2] = rgb[2];
           }
         }
       }
