@@ -44,6 +44,7 @@ ha_clss_shade/
 - ASPRS classification: 2=ground, 3-5=vegetation, 6=buildings
 - Inspired by HA_Solar_Shade (github.com/LawPaul/HA_Solar_Shade) — own implementation
 - Shadow engine is CRS-agnostic (numpy arrays in meters)
+- Horizon profile: Open-Meteo elevation API (Copernicus 30m DEM), 5km radius, 72 azimuths
 - Reads weather data from slovenian_weather_integration via HA state machine
 
 ## Current Capabilities (as of Seja 5, 2026-03-27)
@@ -82,7 +83,7 @@ ha_clss_shade/
 - ARSO agrometeo (evapotranspiration, water balance, multi-day)
 - ARSO forecast (3h intervals, 6 days via weather.get_forecasts)
 - INCA nowcasting (si0zm PNG → GHI, only covers SE Slovenia)
-- Open-Meteo GHI fallback (free, global, 15-min resolution)
+- Open-Meteo GHI: current (15-min fallback) + hourly forecast (5-day, primary for PV forecast)
 
 ### Frontend Panel
 - 2D: Leaflet map with satellite basemaps, Leaflet.Draw zone editing

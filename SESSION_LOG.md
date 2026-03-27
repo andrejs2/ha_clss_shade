@@ -400,19 +400,38 @@ Open-Meteo urni GHI za PV forecast, perzistenten performance factor.
 - Shranjevanje ob vsakem EMA update (po `update_performance_ema()`)
 - EMA preživi restart HA brez resetiranja na 1.0
 
+### Bugi popravljeni
+- **3D zone izgubljene v options flow** — `config_flow.py` ni ohranjal `zones_3d` ko uporabnik
+  spremeni nastavitve (radius, PV config). Dodano ohranjevanje `CONF_3D_ZONES` v `self._options`.
+- **3D zone "Unknown" ponoči** — coordinator je vrnil prazen `zones_3d` dict ponoči → senzorji
+  kazali "Unknown". Zdaj vrne 0% sonce za vse 3D zone (konsistentno z 2D conami).
+- **Open-Meteo HTTP 429** — horizon.py pošiljal requeste prehitro. Dodani:
+  - 0.3s delay med batch-i
+  - Retry do 3× z eksponentnim backoff-om ob rate limitu
+  - Horizon profil zdaj deluje tudi z brezplačnim Open-Meteo limitom
+
+### Testiranje na HA
+- Horizon profil se je izračunal (max=9.0° pri az=155° = JJV smer), a z nepopolnimi podatki
+  zaradi 429 rate limit — popravek dodan
+- Open-Meteo forecast uspešno fetch-an: 120 urnih vstopov za 5 dni
+- Shadow forecast izračunan: 36+36+18+18+18 korakov (5 dni)
+- 3D zone na novo narisane po options flow bugu
+
 ### Spremembe
-- **Nova datoteka**: `clss_data/horizon.py` (~210 vrstic)
-- **Spremenjene**: rasterizer.py, shadow_engine.py, forecast.py, openmeteo_client.py, coordinator.py, CLAUDE.md, TODO.md
-- **Commiti**: 1 (9193ee3)
+- **Nova datoteka**: `clss_data/horizon.py` (~230 vrstic)
+- **Spremenjene**: rasterizer.py, shadow_engine.py, forecast.py, openmeteo_client.py,
+  coordinator.py, config_flow.py, CLAUDE.md, TODO.md
+- **Commiti**: 3 (9193ee3, 8df4f12, a1e47ad)
 
 ### Odprta vprašanja
 - Horizon profil: ali 5km zadostuje za vse lokacije v Sloveniji? (planine morda potrebujejo 10km)
 - Open-Meteo forecast: validacija z realnimi SolarEdge podatki (primerjava GHI vs dejanska proizvodnja)
 - DTM gap-fill: ali je nearest-neighbor dovolj gladek ali bi potrebovali IDW/kriging?
 - Mesečni weather faktorji kot fallback: še ni implementirano
+- Horizon profil az=155° (JJV) 9° — ali ujema z dejanskim terenom? (Golovec?)
 
 ### Naslednji koraki (Seja 6)
-- Testirati na HA instanci z vsemi štirimi izboljšavami
+- Testirati jutri po sončnem vzhodu: horizon profil, Open-Meteo GHI, 3D zone senzorji
 - Validirati horizon profil s SolarEdge jutranjimi podatki (11% ob 8:00)
 - Mesečni weather faktorji kot fallback za dneve brez Open-Meteo
 - Per-zone panel tilt/azimut format (cona:Wp:nagib:azimut)

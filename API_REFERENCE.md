@@ -158,9 +158,15 @@ Te podatke beremo iz HA entitet, ne neposredno iz API-ja.
 - Manual LAZ mode ze podpira poljubne LAZ datoteke
 
 ### Open-Meteo (globalni vremenski API)
-- `https://api.open-meteo.com/v1/forecast`
-- Soncno sevanje (GHI, DNI, DHI) — backup ce ARSO ni na voljo
-- Brezplacen, brez API kljuca
+- **Forecast**: `https://api.open-meteo.com/v1/forecast`
+  - Trenutni GHI (15-min): `?minutely_15=shortwave_radiation_instant`
+  - Urni forecast (5 dni): `?hourly=shortwave_radiation,temperature_2m,cloud_cover&forecast_days=5`
+  - Primarni vir za PV forecast (neposreden GHI namesto cloud modela)
+- **Elevation**: `https://api.open-meteo.com/v1/elevation`
+  - Copernicus 30m DEM, batch query (comma-separated lat/lon)
+  - Uporabljen za horizon profil (72 azimutov × 20 razdalj)
+  - Rate limit: ~100 točk/request, potreben delay med requesti
+- Brezplacen, brez API kljuca, globalna pokritost
 
 ### E-prostor OGC servisi
 - WMS/WFS/WMTS na `https://www.e-prostor.gov.si/`
