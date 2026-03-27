@@ -224,27 +224,19 @@ export class TerrainViewer {
           const hag = dsm[gridIdx] - dtm[gridIdx];
           const isThisLayer = classSet.has(cls[gridIdx]) && hag > ELEV_THRESHOLD;
 
-          if (!hasData[gridIdx]) {
-            pos[vi3 + 1] = dtm[gridIdx] - baseH;
+          if (!hasData[gridIdx] || !isThisLayer) {
+            // Push below ground mesh so satellite texture shows through
+            pos[vi3 + 1] = dtm[gridIdx] - baseH - 2.0;
             colors[vi3] = BG[0]; colors[vi3 + 1] = BG[1]; colors[vi3 + 2] = BG[2];
             continue;
           }
 
-          // Elevated features at DSM height; everything else collapses to DTM
-          pos[vi3 + 1] = isThisLayer ? (dsm[gridIdx] - baseH) : (dtm[gridIdx] - baseH);
+          pos[vi3 + 1] = dsm[gridIdx] - baseH;
 
-          // Color: layer features get brightened classification color,
-          // non-layer cells get ground color (seamless blend with ground mesh)
           const rgb = CLASS_COLORS[cls[gridIdx]] || DEFAULT_COLOR;
-          if (isThisLayer) {
-            colors[vi3] = Math.min(1, rgb[0] * color_bright);
-            colors[vi3 + 1] = Math.min(1, rgb[1] * color_bright);
-            colors[vi3 + 2] = Math.min(1, rgb[2] * color_bright);
-          } else {
-            colors[vi3] = rgb[0];
-            colors[vi3 + 1] = rgb[1];
-            colors[vi3 + 2] = rgb[2];
-          }
+          colors[vi3] = Math.min(1, rgb[0] * color_bright);
+          colors[vi3 + 1] = Math.min(1, rgb[1] * color_bright);
+          colors[vi3 + 2] = Math.min(1, rgb[2] * color_bright);
         }
       }
 
