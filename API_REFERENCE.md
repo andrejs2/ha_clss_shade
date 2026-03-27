@@ -239,3 +239,67 @@ pixel_y = int((bbox[2] - lat) / (bbox[2] - bbox[0]) * height)
 - Lokacijsko specificen (ne ena postaja za celo mesto)
 - Visoka casovna resolucija (5 min vs 30 min za ARSO postaje)
 - Zdruziti z shadow engine + POA model = natancna PV napoved za +6h
+
+---
+
+## 5. SolarEdge Monitoring API
+
+### Base URL
+```
+https://monitoringapi.solaredge.com
+```
+
+### Avtentikacija
+API kljuc kot URL parameter: `?api_key=XXXXXXXX`
+Kljuc se dobi v: Monitoring portal → Admin → Site Access → API Access
+
+### Site ID
+`2115036` (MSE TINA SERŠEN, Ljubljana-Dobrunje)
+
+### Podatki sistema
+- Peak power: 11.06 kWp
+- Paneli: JinkoSolar JKM-395N-6RL3-V Tiger (395 Wp)
+- Temp. koeficient: -0.34 %/°C
+- Inverter: SolarEdge SE16K-RW0T0BNN4 (S/N: 7E09AD66-9A)
+- Lokacija: lat=46.0383376, lon=14.6116002
+- Podatki od: 2021-03-02
+
+### Ključni endpointi
+
+| Endpoint | Path | Resolucija | Max period |
+|----------|------|------------|------------|
+| Overview | `/site/{id}/overview` | Trenutno | - |
+| Data Period | `/site/{id}/dataPeriod` | - | - |
+| Energy | `/site/{id}/energy?timeUnit=X&startDate=Y&endDate=Z` | 15min/H/D/M/Y | 1 leto (D) |
+| Energy Details | `/site/{id}/energyDetails?timeUnit=X&...&meters=M` | 15min/H/D/M | 1 mesec |
+| Power | `/site/{id}/power?startTime=Y&endTime=Z` | 15 min | 1 mesec |
+| Inverter Data | `/equipment/{id}/{serial}/data?startTime=Y&endTime=Z` | 5 min | 1 teden |
+
+Meters za energyDetails: `Production,Consumption,SelfConsumption,FeedIn,Purchased`
+
+### Omejitve
+- 300 requestov/dan
+- Max 300 parallel per site
+
+### Mesečni vremenski faktorji (iz 5 let podatkov 2021-2026)
+```
+weather_factor = dejanska_proizvodnja / Haurwitz_clearsky
+```
+
+| Mesec | Weather factor | Opis |
+|-------|---------------|------|
+| Jan | 0.321 | Megla, oblačno |
+| Feb | 0.419 | Megla/oblačno |
+| Mar | 0.562 | Zmerno oblačno |
+| Apr | 0.602 | Zmerno oblačno |
+| Maj | 0.563 | Zmerno oblačno |
+| Jun | 0.694 | Jasni meseci |
+| Jul | 0.696 | Jasni meseci |
+| Aug | 0.674 | Jasni meseci |
+| Sep | 0.588 | Zmerno oblačno |
+| Okt | 0.460 | Zmerno oblačno |
+| Nov | 0.329 | Megla, oblačno |
+| Dec | 0.224 | Megla, oblačno |
+
+Sistem PR na jasnih dnevih: ~97%
+Letni specifični donos: ~1121 kWh/kWp
