@@ -274,6 +274,104 @@ def _ray_march_vectorized(
     return (1.0 - light).astype(np.float32)
 
 
+def is_point_in_sun_3d(
+    site: SiteModel,
+    sun: SunPosition,
+    grid_row: float,
+    grid_col: float,
+    height_m: float,
+    current_date: date | None = None,
+) -> float:
+    """Check if an arbitrary 3D point receives sunlight.
+
+    Traces a ray from (grid_row, grid_col, height_m) toward the sun,
+    checking for DSM obstacles along the way.
+
+    Returns:
+        Light fraction 0.0 (full shade) to 1.0 (full sun).
+    """
+    if not sun.is_above_horizon:
+        return 0.0
+
+    if current_date is None:
+        current_date = date.today()
+
+    rows, cols = site.dsm.shape
+    transmittance_grid = _build_transmittance_grid(
+        site.classification, current_date.month
+    )
+
+    az_rad = math.radians(sun.azimuth)
+    elev_rad = math.radians(sun.elevation)
+    dx = math.sin(az_rad)
+    dy = math.cos(az_rad)
+    dz = math.tan(elev_rad) * site.resolution
+
+    light = 1.0
+    max_steps = int(math.ceil(math.sqrt(rows**2 + cols**2)))
+
+    for step in range(1, max_steps + 1):
+        sc = int(round(grid_col + dx * step))
+        sr = int(round(grid_row + dy * step))
+
+        if sr < 0 or sr >= rows or sc < 0 or sc >= cols:
+            break  # left the grid — clear sky
+
+        obstacle_h = site.dsm[sr, sc]
+        ray_h = height_m + dz * step
+
+        if obstacle_h > ray_h:
+            light *= transmittance_grid[sr, sc]
+            if light < 0.01:
+                return 0.0
+
+    return light
+
+
+def compute_3d_zone_sun_percent(
+    site: SiteModel,
+    sun: SunPosition,
+    points_3d: list[dict],
+    current_date: date | None = None,
+) -> float:
+    """Compute sun percentage for a 3D zone defined by arbitrary points.
+
+    Converts viewer coordinates to grid coordinates and ray-traces
+    each point.
+
+    Args:
+        site: Rasterized site model.
+        sun: Current sun position.
+        points_3d: List of {x, y, z} dicts in 3D viewer coordinates.
+        current_date: Date for seasonal transmittance.
+
+    Returns:
+        Sun percentage (0-100).
+    """
+    if not points_3d or not sun.is_above_horizon:
+        return 0.0
+
+    # Coordinate conversion: viewer → grid
+    half_w = site.cols * site.resolution / 2
+    half_h = site.rows * site.resolution / 2
+    base_h = float(np.nanmin(site.dtm))
+
+    sun_values = []
+    for pt in points_3d:
+        col = (pt["x"] + half_w) / site.resolution
+        row = (half_h - pt["z"]) / site.resolution
+        height = pt["y"] + base_h
+
+        # Clamp to grid bounds
+        col = max(0, min(col, site.cols - 1))
+        row = max(0, min(row, site.rows - 1))
+
+        light = is_point_in_sun_3d(site, sun, row, col, height, current_date)
+        sun_values.append(light)
+
+    return round(sum(sun_values) / len(sun_values) * 100, 1)
+
+
 def compute_shadow_map(
     site: SiteModel,
     sun: SunPosition,

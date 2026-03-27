@@ -58,6 +58,7 @@ from .forecast import (
 from .shadow_engine import (
     ShadowResult,
     SunPosition,
+    compute_3d_zone_sun_percent,
     compute_shadow_map,
     compute_sun_position,
 )
@@ -114,6 +115,8 @@ class ClssShadeData:
     pv_forecast_next_3h_wh: float | None = None
     pv_forecast_rest_of_today_kwh: float | None = None
     forecast: ForecastData | None = None
+    # 3D zone sun percentages: {zone_name: sun_percent}
+    zones_3d: dict[str, float] = field(default_factory=dict)
 
 
 class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
@@ -732,6 +735,19 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
             # Assemble forecast from cached data
             forecast = self._assemble_forecast(now)
 
+            # Compute 3D zone sun percentages
+            zones_3d_data = {}
+            zones_3d_config = self.config_entry.options.get("zones_3d", [])
+            if zones_3d_config and self._site:
+                for z3d in zones_3d_config:
+                    name = z3d.get("name", "")
+                    points = z3d.get("points", [])
+                    if name and points:
+                        sun_pct = compute_3d_zone_sun_percent(
+                            self._site, sun, points
+                        )
+                        zones_3d_data[name] = sun_pct
+
             return ClssShadeData(
                 shadow=result,
                 sun=sun,
@@ -748,6 +764,7 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
                 pv_power_real=pv_real,
                 pv_performance_factor=pv_perf,
                 irrigation_need=irrigation,
+                zones_3d=zones_3d_data,
                 pv_forecast_today_kwh=round(forecast.today.total_kwh, 2) if forecast and forecast.today else None,
                 pv_forecast_tomorrow_kwh=round(forecast.tomorrow.total_kwh, 2) if forecast and forecast.tomorrow else None,
                 pv_forecast_next_hour_w=round(forecast.next_hour_w, 1) if forecast else None,

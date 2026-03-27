@@ -216,6 +216,40 @@ async def async_setup_entry(
             )
         )
 
+    # 3D zone sensors (sun% for each 3D zone)
+    zones_3d_config = entry.options.get("zones_3d", [])
+    for z3d in zones_3d_config:
+        zone_name = z3d.get("name", "")
+        if not zone_name:
+            continue
+        entities.append(
+            Clss3dZoneSensor(
+                coordinator,
+                entry,
+                SensorEntityDescription(
+                    key=f"zone3d_{zone_name}_sun",
+                    native_unit_of_measurement=PERCENTAGE,
+                    state_class=SensorStateClass.MEASUREMENT,
+                    icon="mdi:cube-scan",
+                ),
+                zone_name=zone_name,
+            )
+        )
+        entities.append(
+            Clss3dZoneSensor(
+                coordinator,
+                entry,
+                SensorEntityDescription(
+                    key=f"zone3d_{zone_name}_shade",
+                    native_unit_of_measurement=PERCENTAGE,
+                    state_class=SensorStateClass.MEASUREMENT,
+                    icon="mdi:cube-scan",
+                ),
+                zone_name=zone_name,
+                invert=True,
+            )
+        )
+
     async_add_entities(entities)
 
 
@@ -446,3 +480,42 @@ class ClssZoneSensor(CoordinatorEntity[ClssShadeCoordinator], SensorEntity):
             "area_m2": zone.area_m2,
             "cell_count": zone.cell_count,
         }
+
+
+class Clss3dZoneSensor(CoordinatorEntity[ClssShadeCoordinator], SensorEntity):
+    """3D zone sensor — sun/shade percent from 3D ray tracing."""
+
+    has_entity_name = True
+
+    def __init__(
+        self,
+        coordinator: ClssShadeCoordinator,
+        entry: ConfigEntry,
+        description: SensorEntityDescription,
+        zone_name: str,
+        invert: bool = False,
+    ) -> None:
+        super().__init__(coordinator)
+        self.entity_description = description
+        self._zone_name = zone_name
+        self._invert = invert
+        self._attr_unique_id = f"{entry.entry_id}_{description.key}"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry.entry_id)},
+            name=entry.title,
+            manufacturer="GURS / ARSO",
+            model="CLSS LiDAR Shade Analysis",
+            entry_type=DeviceEntryType.SERVICE,
+        )
+        kind = "shade percent" if invert else "sun percent"
+        self._attr_name = f"{zone_name.capitalize()} 3D {kind}"
+
+    @property
+    def native_value(self) -> float | None:
+        data: ClssShadeData | None = self.coordinator.data
+        if data is None:
+            return None
+        sun_pct = data.zones_3d.get(self._zone_name)
+        if sun_pct is None:
+            return None
+        return round(100.0 - sun_pct, 1) if self._invert else sun_pct
