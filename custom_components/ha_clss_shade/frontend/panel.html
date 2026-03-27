@@ -166,6 +166,11 @@
 <div class="sidebar" id="sidebar">
   <h2>Cone</h2>
   <div id="zone-list"></div>
+  <div id="zone-list-3d" style="display:none">
+    <div style="height:1px;background:#444;margin:8px 0"></div>
+    <h2>3D Cone</h2>
+    <div id="zone-list-3d-items"></div>
+  </div>
 </div>
 
 <div class="help-text" id="help-text">
@@ -743,6 +748,7 @@
           }
           console.log(`Loaded ${saved.zones.length} saved 3D zones`);
         }
+        update3dZoneList();
       } catch(e) { console.warn('Could not load 3D zones:', e); }
 
       // Listen for draw events
@@ -835,6 +841,7 @@
         }));
         await callWS3d('ha_clss_shade/save_3d_zones', { zones: zonesToSave });
         drawStatus.textContent = `Cona "${name}" shranjena!`;
+        update3dZoneList();
       } catch(e) {
         drawStatus.textContent = 'Napaka pri shranjevanju: ' + e.message;
         console.error('Save 3D zones error:', e);
@@ -853,12 +860,53 @@
     drawStatus.style.display = 'none';
   });
 
+  const zoneList3d = document.getElementById('zone-list-3d');
+  const zoneList3dItems = document.getElementById('zone-list-3d-items');
+
+  function update3dZoneList() {
+    if (!viewer) return;
+    zoneList3dItems.innerHTML = '';
+    if (viewer.completedZones.length === 0) {
+      zoneList3d.style.display = 'none';
+      return;
+    }
+    zoneList3d.style.display = 'block';
+    for (let i = 0; i < viewer.completedZones.length; i++) {
+      const z = viewer.completedZones[i];
+      const div = document.createElement('div');
+      div.className = 'zone-item';
+      div.innerHTML = `
+        <span class="color-dot" style="background:${z.color || '#2196F3'}"></span>
+        <span class="name">${z.name}</span>
+        <span class="type">3D (${z.points.length})</span>
+        <button class="delete-btn" data-idx="${i}" title="Izbriši">✕</button>
+      `;
+      div.querySelector('.delete-btn').addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const idx = parseInt(e.target.dataset.idx);
+        const zone = viewer.completedZones[idx];
+        if (zone.mesh) { viewer.scene.remove(zone.mesh); }
+        viewer.completedZones.splice(idx, 1);
+        update3dZoneList();
+        // Save updated list
+        try {
+          const zonesToSave = viewer.completedZones.map(z => ({
+            name: z.name, color: z.color, points: z.points, zone_type: 'custom',
+          }));
+          await callWS3d('ha_clss_shade/save_3d_zones', { zones: zonesToSave });
+        } catch(err) { console.error('Delete save error:', err); }
+      });
+      zoneList3dItems.appendChild(div);
+    }
+  }
+
   btn2d.addEventListener('click', () => {
     if (viewer && viewer.drawingMode) viewer.cancelDrawing();
     btnDraw3d.style.display = 'none';
     btnFinish3d.style.display = 'none';
     btnCancel3d.style.display = 'none';
     drawStatus.style.display = 'none';
+    zoneList3d.style.display = 'none';
     switchMode('2d');
   });
   btn3d.addEventListener('click', () => switchMode('3d'));
