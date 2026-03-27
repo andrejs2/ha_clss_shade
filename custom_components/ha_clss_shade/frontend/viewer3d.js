@@ -291,9 +291,6 @@ export class TerrainViewer {
       texture.needsUpdate = true;
       texture.minFilter = THREE.LinearFilter;
       texture.magFilter = THREE.LinearFilter;
-      // Flip UV vertically — PlaneGeometry UV origin is top-left,
-      // but our grid row 0 = south = bottom of satellite image
-      texture.flipY = false;
       mesh.material.dispose();
       mesh.material = new THREE.MeshLambertMaterial({
         map: texture,
