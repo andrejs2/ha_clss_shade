@@ -45,6 +45,7 @@ from .const import (
     INCA_REFRESH_INTERVAL_MIN,
 )
 from .inca_client import fetch_inca_solar_radiation
+from .openmeteo_client import fetch_openmeteo_ghi
 from .forecast import (
     ForecastData,
     ShadowForecastStep,
@@ -635,7 +636,7 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
                             cell_count=zone.cell_count,
                         )
 
-            # Refresh INCA solar radiation (every 10 min)
+            # Refresh solar radiation: INCA → Open-Meteo fallback (every 10 min)
             inca_stale = (
                 self._inca_fetched_at is None
                 or (now - self._inca_fetched_at)
@@ -646,6 +647,11 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
                 ghi, ts = await fetch_inca_solar_radiation(
                     session, self._lat, self._lon
                 )
+                if ghi is None:
+                    # INCA has no data for this location — try Open-Meteo
+                    ghi, ts = await fetch_openmeteo_ghi(
+                        session, self._lat, self._lon
+                    )
                 if ghi is not None:
                     self._inca_ghi = ghi
                     self._inca_timestamp = ts
