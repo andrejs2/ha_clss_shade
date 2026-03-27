@@ -294,6 +294,9 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
                 panel_capacity_wp=5000.0,
                 poa_factor=poa,
                 inca_solar_radiation=weather.inca_solar_radiation,
+                sun_elevation=sun.elevation if sun else None,
+                day_of_year=datetime.now().timetuple().tm_yday,
+                temperature=weather.temperature,
             )
 
         total_power = 0.0
@@ -309,6 +312,9 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
                 panel_capacity_wp=cap,
                 poa_factor=poa,
                 inca_solar_radiation=weather.inca_solar_radiation,
+                sun_elevation=sun.elevation if sun else None,
+                day_of_year=datetime.now().timetuple().tm_yday,
+                temperature=weather.temperature,
             )
             if result is not None:
                 total_power += result

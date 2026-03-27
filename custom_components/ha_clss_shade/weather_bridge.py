@@ -313,18 +313,59 @@ def compute_poa_factor(
     return max(0.0, min(poa_factor, 3.0))
 
 
+def compute_clearsky_ghi(sun_elevation: float, day_of_year: int) -> float:
+    """Estimate clear-sky GHI using Haurwitz model with seasonal correction.
+
+    Haurwitz (1945) empirical model extended with earth-sun distance
+    correction.  Typical values for Slovenia:
+    ~300 W/m² winter noon, ~900 W/m² summer noon.
+    """
+    if sun_elevation <= 0:
+        return 0.0
+
+    import math
+
+    sin_elev = math.sin(math.radians(sun_elevation))
+
+    # Earth-sun distance correction (perihelion Jan ~1.034, aphelion Jul ~0.967)
+    ecc = 1.0 + 0.033 * math.cos(2.0 * math.pi * day_of_year / 365.0)
+
+    # Haurwitz clear-sky model
+    ghi = 1098.0 * ecc * sin_elev * math.exp(-0.057 / sin_elev)
+
+    return max(0.0, ghi)
+
+
+def compute_temperature_derating(ambient_temp: float | None) -> float:
+    """PV temperature derating for crystalline silicon panels.
+
+    Cell temp ≈ ambient + 20 °C (roof-mounted, moderate ventilation).
+    Temperature coefficient: −0.35 %/°C relative to 25 °C STC.
+    Returns multiplicative factor (e.g. 0.93 at 20 °C ambient).
+    """
+    if ambient_temp is None:
+        return 1.0
+    cell_temp = ambient_temp + 20.0
+    return max(0.5, 1.0 + (-0.0035) * (cell_temp - 25.0))
+
+
 def estimate_pv_power(
     sun_percent: float,
     solar_radiation: float | None,
     cloud_coverage: float | None = None,
     panel_capacity_wp: float = 5000.0,
     poa_factor: float = 1.2,
-    system_losses: float = 0.08,
+    system_losses: float = 0.05,
     inca_solar_radiation: float | None = None,
+    sun_elevation: float | None = None,
+    day_of_year: int | None = None,
+    temperature: float | None = None,
 ) -> float | None:
     """Estimate PV power output combining shade analysis with solar radiation.
 
     Priority chain: INCA GHI (1km grid) > ARSO station GHI > cloud model.
+    Cloud model uses Haurwitz clear-sky GHI with EMHASS-style cloud factor.
+    Temperature derating applied when ambient temperature is available.
 
     Args:
         sun_percent: Percentage of direct sunlight on the PV zone (0-100).
@@ -332,8 +373,11 @@ def estimate_pv_power(
         cloud_coverage: Cloud coverage percentage (0-100) from ARSO.
         panel_capacity_wp: Installed PV capacity in Wp.
         poa_factor: Plane-of-array factor from compute_poa_factor().
-        system_losses: System losses (inverter, wiring, temperature) as fraction.
+        system_losses: System losses (inverter, wiring) as fraction.
         inca_solar_radiation: GHI in W/m² from INCA 1km grid (location-specific).
+        sun_elevation: Sun elevation in degrees (for clear-sky model fallback).
+        day_of_year: Day of year 1-365 (for clear-sky model fallback).
+        temperature: Ambient temperature in °C (for temperature derating).
 
     Returns:
         Estimated power output in Watts, or None if no data.
@@ -342,6 +386,7 @@ def estimate_pv_power(
         return 0.0
 
     sun_fraction = sun_percent / 100.0
+    temp_factor = compute_temperature_derating(temperature)
 
     # Priority: INCA (location-specific 1km) > ARSO station > cloud model
     ghi = None
@@ -358,15 +403,21 @@ def estimate_pv_power(
         effective_radiation = poa_radiation * (sun_fraction * 0.8 + 0.2)
 
         # Standard test conditions: 1000 W/m²
-        power = panel_capacity_wp * (effective_radiation / 1000.0) * (1 - system_losses)
+        power = panel_capacity_wp * (effective_radiation / 1000.0) * (1 - system_losses) * temp_factor
         return round(max(0.0, power), 1)
 
-    # Fallback: estimate from cloud coverage
+    # Fallback: clear-sky model with cloud attenuation
     if cloud_coverage is not None:
-        cloud_factor = 1.0 - (cloud_coverage / 100.0) * 0.75
-        estimated_radiation = 800.0 * cloud_factor * poa_factor
+        # Haurwitz clear-sky GHI if sun position available, else 800 W/m²
+        if sun_elevation is not None and day_of_year is not None:
+            clearsky_ghi = compute_clearsky_ghi(sun_elevation, day_of_year)
+        else:
+            clearsky_ghi = 800.0
+        # EMHASS-style cloud factor: 35% diffuse floor at full overcast
+        cloud_factor = 0.35 + 0.65 * (1.0 - cloud_coverage / 100.0)
+        estimated_radiation = clearsky_ghi * cloud_factor * poa_factor
         effective_radiation = estimated_radiation * (sun_fraction * 0.8 + 0.2)
-        power = panel_capacity_wp * (effective_radiation / 1000.0) * (1 - system_losses)
+        power = panel_capacity_wp * (effective_radiation / 1000.0) * (1 - system_losses) * temp_factor
         return round(max(0.0, power), 1)
 
     return None

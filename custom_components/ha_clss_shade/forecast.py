@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 
 from .shadow_engine import ShadowResult, SunPosition, compute_shadow_map, compute_sun_position
-from .weather_bridge import compute_poa_factor
+from .weather_bridge import compute_clearsky_ghi, compute_poa_factor, compute_temperature_derating
 
 from typing import TYPE_CHECKING
 
@@ -297,7 +297,7 @@ def assemble_pv_forecast(
 
     target_date = shadow_steps[0].dt.date()
     interval_hours = interval_minutes / 60.0
-    system_losses = 0.08
+    system_losses = 0.05  # inverter + wiring (temperature handled separately)
 
     hourly: list[PvForecastHour] = []
     total_wh = 0.0
@@ -326,15 +326,19 @@ def assemble_pv_forecast(
             panel_azimuth=panel_azimuth,
         )
 
-        # Cloud factor
+        # Cloud factor (EMHASS-style: 35% diffuse floor at full overcast)
         cloud_cov = wx.get("cloud_coverage")
         if cloud_cov is not None:
-            cloud_factor = 1.0 - (cloud_cov / 100.0) * 0.75
+            cloud_factor = 0.35 + 0.65 * (1.0 - cloud_cov / 100.0)
         else:
-            cloud_factor = 0.75  # assume partly cloudy if no data
+            cloud_factor = 0.675  # assume ~50% cloud if no data
 
-        # Estimated radiation from cloud model (no measured GHI for forecast)
-        estimated_radiation = 800.0 * cloud_factor * poa
+        # Clear-sky GHI (Haurwitz model) with cloud attenuation
+        clearsky_ghi = compute_clearsky_ghi(step.sun_elevation, step.dt.timetuple().tm_yday)
+        estimated_radiation = clearsky_ghi * cloud_factor * poa
+
+        # Temperature derating
+        temp_factor = compute_temperature_derating(wx.get("temperature"))
 
         # Per-zone power calculation
         total_power = 0.0
@@ -347,7 +351,7 @@ def assemble_pv_forecast(
             capacity = 5000
             sun_frac = sun_pct / 100.0
             effective = estimated_radiation * (sun_frac * 0.8 + 0.2)
-            total_power = capacity * (effective / 1000.0) * (1 - system_losses)
+            total_power = capacity * (effective / 1000.0) * (1 - system_losses) * temp_factor
             total_sun_pct = sun_pct
             total_capacity = capacity
         else:
@@ -356,7 +360,7 @@ def assemble_pv_forecast(
                 sun_pct = step.zone_sun_pct.get(zone_name, 50.0)
                 sun_frac = sun_pct / 100.0
                 effective = estimated_radiation * (sun_frac * 0.8 + 0.2)
-                power = cap * (effective / 1000.0) * (1 - system_losses)
+                power = cap * (effective / 1000.0) * (1 - system_losses) * temp_factor
                 total_power += max(0.0, power)
                 total_sun_pct += sun_pct * cap
                 total_capacity += cap
