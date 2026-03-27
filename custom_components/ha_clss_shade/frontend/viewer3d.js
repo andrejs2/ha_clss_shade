@@ -156,6 +156,9 @@ export class TerrainViewer {
     const hasData = new Uint8Array(rows * cols);
     for (let i = 0; i < cls.length; i++) hasData[i] = cls[i] > 0 ? 1 : 0;
 
+    // Scene background color for no-data cells (blend in, no huge triangles)
+    const BG = [0.10, 0.10, 0.18];
+
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
         const gridIdx = r * cols + c;
@@ -163,9 +166,9 @@ export class TerrainViewer {
         const vi3 = vertIdx * 3;
 
         if (!hasData[gridIdx]) {
-          // No real LiDAR data — push far below to hide
-          groundPos[vi3 + 1] = -999;
-          groundColors[vi3] = 0; groundColors[vi3 + 1] = 0; groundColors[vi3 + 2] = 0;
+          // Keep at DTM height (gap-filled) but color as background
+          groundPos[vi3 + 1] = dtm[gridIdx] - baseH;
+          groundColors[vi3] = BG[0]; groundColors[vi3 + 1] = BG[1]; groundColors[vi3 + 2] = BG[2];
           continue;
         }
 
@@ -190,6 +193,11 @@ export class TerrainViewer {
     groundMesh.receiveShadow = true;
     groundMesh.name = 'ground';
     this.terrainGroup.add(groundMesh);
+
+    // Load satellite texture onto ground mesh
+    if (data.bounds_sw && data.bounds_ne) {
+      this._loadSatelliteTexture(groundMesh, data.bounds_sw, data.bounds_ne, cols, rows);
+    }
 
     // --- Build separate meshes for buildings and vegetation ---
     // Each gets its own mesh so user can toggle visibility independently.
@@ -216,10 +224,9 @@ export class TerrainViewer {
           const hag = dsm[gridIdx] - dtm[gridIdx];
           const isThisLayer = classSet.has(cls[gridIdx]) && hag > ELEV_THRESHOLD;
 
-          // No data cells → hide
           if (!hasData[gridIdx]) {
-            pos[vi3 + 1] = -999;
-            colors[vi3] = 0; colors[vi3 + 1] = 0; colors[vi3 + 2] = 0;
+            pos[vi3 + 1] = dtm[gridIdx] - baseH;
+            colors[vi3] = BG[0]; colors[vi3 + 1] = BG[1]; colors[vi3 + 2] = BG[2];
             continue;
           }
 
@@ -270,6 +277,30 @@ export class TerrainViewer {
     this.controls.update();
 
     console.log(`Terrain loaded: ${rows}×${cols}, res=${res}m, height ${minH.toFixed(1)}-${maxH.toFixed(1)}m`);
+  }
+
+  _loadSatelliteTexture(mesh, sw, ne, cols, rows) {
+    // Fetch satellite imagery from Esri World Imagery and apply as texture
+    const imgSize = Math.min(1024, Math.max(cols, rows));
+    const bbox = `${sw[1]},${sw[0]},${ne[1]},${ne[0]}`;
+    const url = `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/export?`
+      + `bbox=${bbox}&bboxSR=4326&size=${imgSize},${imgSize}`
+      + `&imageSR=4326&format=png&f=image`;
+
+    const loader = new THREE.TextureLoader();
+    loader.crossOrigin = 'anonymous';
+    loader.load(url, (texture) => {
+      texture.minFilter = THREE.LinearFilter;
+      texture.magFilter = THREE.LinearFilter;
+      mesh.material = new THREE.MeshLambertMaterial({
+        map: texture,
+        side: THREE.DoubleSide,
+      });
+      mesh.material.needsUpdate = true;
+      console.log('Satellite texture loaded');
+    }, undefined, (err) => {
+      console.warn('Satellite texture failed, keeping classification colors', err);
+    });
   }
 
   _buildSkirtWalls(dsm, dtm, cls, rows, cols, res, baseH) {

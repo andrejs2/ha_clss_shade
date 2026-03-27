@@ -236,6 +236,15 @@ async def ws_get_terrain(
 
 def _build_terrain_payload(site) -> dict:
     """Build terrain payload in executor thread (numpy operations)."""
+    from .clss_data.geo import d96tm_to_wgs84
+
+    # Compute WGS84 bounds for satellite texture
+    sw_lat, sw_lon = d96tm_to_wgs84(site.origin_e, site.origin_n)
+    ne_lat, ne_lon = d96tm_to_wgs84(
+        site.origin_e + site.cols * site.resolution,
+        site.origin_n + site.rows * site.resolution,
+    )
+
     return {
         "rows": site.rows,
         "cols": site.cols,
@@ -244,6 +253,8 @@ def _build_terrain_payload(site) -> dict:
         "origin_n": site.origin_n,
         "center_e": site.center_e,
         "center_n": site.center_n,
+        "bounds_sw": [sw_lat, sw_lon],
+        "bounds_ne": [ne_lat, ne_lon],
         "dsm_b64": _encode_grid(site.dsm, "float32"),
         "dtm_b64": _encode_grid(site.dtm, "float32"),
         "classification_b64": _encode_grid(site.classification, "uint8"),
