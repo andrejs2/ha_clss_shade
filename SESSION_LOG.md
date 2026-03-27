@@ -301,16 +301,50 @@ Implementacija treh "low-hanging fruit" izboljšav solarnega modela.
 - Performance EMA se bo moral resetirati po Open-Meteo integraciji
 - Ali Open-Meteo GHI zadostuje ali potrebujemo še urni forecast?
 
-### Commiti
-- `9faf7bf` Fix INCA client: import aiohttp at runtime
-- `d5eb4eb` Add Open-Meteo GHI as fallback when INCA has no coverage
-- `499d6bb` Update temp coefficient to JinkoSolar spec (-0.34%)
-- `d866460` Add SolarEdge API docs and monthly weather factors
-- `a1e140e` Replace fixed 800 W/m² with Haurwitz clear-sky model
+### 3D Zone Editor (Faza 5 — implementirana!)
+- **Three.js 3D viewer** z DSM heightmap meshom, OrbitControls, raycasting
+- **Skirt walls** za stavbe — vertikalne stene na robovih stavb (9950 quadov)
+- **Layer toggles**: Tla / Stavbe / Vegetacija / Stene — neodvisno vklapljanje
+- **Satelitska tekstura** (Esri World Imagery) na ground mesh — prepoznavne strehe, ceste, trava
+- **3D zone drawing**: [+ 3D Cona] → klikaj točke na terenu/stenah → [Zaključi] → poligon
+- **3D zone persistence**: shranjevanje/nalaganje prek WebSocket v HA config
+- **3D zone senzorji**: `is_point_in_sun_3d()` ray-trace iz (x,y,z) → sun%/shade% senzorji
+- **3D zone sidebar**: seznam 3D con z barvno piko, imenom, delete gumbom
+- Reusable WebSocket za 3D modul (`callWS3d`)
+- Buildings/vegetation kot individual quads (ne PlaneGeometry) — brez prehodnih pobočij
 
-### Naslednji koraki
-- Testirati Open-Meteo na HA instanci — ali performance factor konvergira proti ~1.0
-- Open-Meteo urni GHI forecast za forecast.py (namesto cloud modela)
+### Bugi popravljeni
+- **INCA aiohttp import** — premaknjeno iz TYPE_CHECKING v runtime
+- **INCA si0zm pokritost** — Ljubljana brez podatkov, dodana Open-Meteo fallback
+- **3D lag** — y=-999 za no-data celice povzročilo ogromne trikotnike, zamenjano z BG barvo
+- **Satelitska tekstura nevidna** — building/vegetation layer mesha prekrivala ground, zamenjana s quad-i
+- **Tekstura obrnjena** — flipY=false popravljen na default (true)
+
+### Omejitev odkrita
+- **Horizon profil**: shadow engine NE zazna hribov izven LiDAR radija (200m)
+  - Rešitev: DEM horizon profil (30m Copernicus DEM, 5km radij) → min sun elevation per azimut
+  - Potrjeno s SolarEdge podatki: jutranje sonce 11% modela ob 8:00 → vzhodni hribi
+
+### Commiti (15 v tej seji)
+- `a1e140e` Replace fixed 800 W/m² with Haurwitz clear-sky model
+- `1017c26` Add Session 4 log
+- `d866460` Add SolarEdge API docs and monthly weather factors
+- `499d6bb` Update temp coefficient to JinkoSolar spec (-0.34%)
+- `9faf7bf` Fix INCA client: import aiohttp at runtime
+- `d5eb4eb` Add Open-Meteo GHI as fallback
+- `e04bba7` Add Phase 5: 3D zone editor plan
+- `bedcde6` Add 3D terrain viewer prototype with Three.js
+- `1a5c9e7` Add 3D zone drawing UI
+- `f198664` Add 3D zone persistence
+- `e9a92fa` Show 3D zones in sidebar
+- `1654ad3` Add layer visibility toggles
+- `66c55ab` Add 3D zone shadow engine + sensors
+- `44658f4` Fix lag + satellite texture
+- `c54a9ef` Fix satellite texture orientation
+
+### Naslednji koraki (Seja 5)
+- Horizon profil iz DEM za daljnje hribe
+- DTM gap-fill izboljšava (interpolacija pod drevesi)
+- Open-Meteo urni GHI forecast za forecast.py
 - Perzistenten performance factor
-- Mesečni weather faktorji kot fallback v forecast.py
-- Ko naberemo mesec podatkov: sklearn korekcija (à la EMHASS ML adjustment)
+- Mesečni weather faktorji kot fallback

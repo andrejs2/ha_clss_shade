@@ -106,12 +106,18 @@ napovedjo (oblacnost) in performance faktorjem → natancna napoved PV proizvodn
 - [ ] Sklearn korekcija na rezidualih (ko imamo mesec+ podatkov) — à la EMHASS ML adjustment
 - [ ] Clustering po vremenskih tipih — ločene cloud krivulje za jasno/delno oblačno/oblačno
 - [ ] WebSocket API za real-time shadow map streaming v frontend
-- [ ] **Faza 5: 3D zone editor** — Three.js viewer + skirt walls + 3D raycasting za cone
-  - [ ] DSM→Three.js mesh + satelitska tekstura + barvanje po klasifikaciji
-  - [ ] Skirt walls za stavbe (vertikalne stene, klikljive na katerikoli višini)
-  - [ ] 3D zone drawing z raycasting (tla, streha, fasada, pod napuščem)
-  - [ ] Shadow engine razširitev: `is_point_in_sun_3d(x, y, z, sun, dsm)`
-  - [ ] Use cases: žaluzije (fasada), terasa pod napuščem, PV na bloku, okna v nadstropju
+- [x] **Faza 5: 3D zone editor** — Three.js viewer + skirt walls + 3D raycasting za cone
+  - [x] DSM→Three.js mesh + satelitska tekstura + barvanje po klasifikaciji
+  - [x] Skirt walls za stavbe (vertikalne stene, klikljive na katerikoli višini)
+  - [x] 3D zone drawing z raycasting (tla, streha, fasada, pod napuščem)
+  - [x] Shadow engine razširitev: `is_point_in_sun_3d(x, y, z, sun, dsm)`
+  - [x] Layer toggle: Tla/Stavbe/Vegetacija/Stene
+  - [x] 3D zone persistence (shranjevanje/nalaganje prek WebSocket)
+  - [x] 3D zone senzorji (sun%/shade% za vsako 3D cono)
+  - [x] Satelitska tekstura (Esri World Imagery) na ground mesh
+  - [ ] Horizon profil iz DEM za daljnje hribe (jutranje/večerno sencenje)
+  - [ ] DTM gap-fill izboljšava (interpolacija namesto DSM fallback pod drevesi)
+  - [ ] Open-Meteo urni GHI forecast za forecast.py (namesto cloud modela)
 
 ---
 
@@ -120,6 +126,8 @@ napovedjo (oblacnost) in performance faktorjem → natancna napoved PV proizvodn
 - [x] Blocking I/O v event loop (slovenian_downloader.py: write_text, open) — popravljeno z run_in_executor
 - [x] Zone editor: cone so se mesale (index-based → name-based fix)
 - [ ] GURS DOF WMS layer ne dela v panelu (napacni parametri)
+- [ ] DTM griči pod drevesi (gap-fill iz DSM namesto interpolacije)
+- [ ] Horizon profil: hribi izven LiDAR radija blokirajo jutranje/večerno sonce
 
 ---
 
