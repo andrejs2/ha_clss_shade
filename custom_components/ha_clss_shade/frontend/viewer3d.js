@@ -152,18 +152,25 @@ export class TerrainViewer {
     }
     const baseH = minH;
 
+    // Build a mask of cells with real data (classification > 0)
+    const hasData = new Uint8Array(rows * cols);
+    for (let i = 0; i < cls.length; i++) hasData[i] = cls[i] > 0 ? 1 : 0;
+
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
         const gridIdx = r * cols + c;
-        // PlaneGeometry vertex order: row 0 = top (north), increasing south
-        // Our grid: row 0 = south. So flip: vertexRow = rows-1-r
         const vertIdx = (rows - 1 - r) * cols + c;
         const vi3 = vertIdx * 3;
 
-        // Y = height (up), subtract base to center vertically
+        if (!hasData[gridIdx]) {
+          // No real LiDAR data — push far below to hide
+          groundPos[vi3 + 1] = -999;
+          groundColors[vi3] = 0; groundColors[vi3 + 1] = 0; groundColors[vi3 + 2] = 0;
+          continue;
+        }
+
         groundPos[vi3 + 1] = dtm[gridIdx] - baseH;
 
-        // Color by classification
         const clsCode = cls[gridIdx];
         const rgb = CLASS_COLORS[clsCode] || DEFAULT_COLOR;
         groundColors[vi3] = rgb[0];
@@ -208,6 +215,13 @@ export class TerrainViewer {
 
           const hag = dsm[gridIdx] - dtm[gridIdx];
           const isThisLayer = classSet.has(cls[gridIdx]) && hag > ELEV_THRESHOLD;
+
+          // No data cells → hide
+          if (!hasData[gridIdx]) {
+            pos[vi3 + 1] = -999;
+            colors[vi3] = 0; colors[vi3 + 1] = 0; colors[vi3 + 2] = 0;
+            continue;
+          }
 
           // Elevated features at DSM height; everything else collapses to DTM
           pos[vi3 + 1] = isThisLayer ? (dsm[gridIdx] - baseH) : (dtm[gridIdx] - baseH);
