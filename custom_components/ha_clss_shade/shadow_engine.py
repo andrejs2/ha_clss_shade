@@ -11,6 +11,11 @@ import numpy as np
 
 from .clss_data.rasterizer import SiteModel
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .clss_data.horizon import HorizonProfile
+
 _LOGGER = logging.getLogger(__name__)
 
 # Classification codes
@@ -281,6 +286,7 @@ def is_point_in_sun_3d(
     grid_col: float,
     height_m: float,
     current_date: date | None = None,
+    horizon: HorizonProfile | None = None,
 ) -> float:
     """Check if an arbitrary 3D point receives sunlight.
 
@@ -291,6 +297,9 @@ def is_point_in_sun_3d(
         Light fraction 0.0 (full shade) to 1.0 (full sun).
     """
     if not sun.is_above_horizon:
+        return 0.0
+
+    if horizon is not None and not horizon.is_sun_visible(sun.azimuth, sun.elevation):
         return 0.0
 
     if current_date is None:
@@ -333,6 +342,7 @@ def compute_3d_zone_sun_percent(
     sun: SunPosition,
     points_3d: list[dict],
     current_date: date | None = None,
+    horizon: HorizonProfile | None = None,
 ) -> float:
     """Compute sun percentage for a 3D zone defined by arbitrary points.
 
@@ -344,6 +354,7 @@ def compute_3d_zone_sun_percent(
         sun: Current sun position.
         points_3d: List of {x, y, z} dicts in 3D viewer coordinates.
         current_date: Date for seasonal transmittance.
+        horizon: Optional terrain horizon profile.
 
     Returns:
         Sun percentage (0-100).
@@ -366,7 +377,7 @@ def compute_3d_zone_sun_percent(
         col = max(0, min(col, site.cols - 1))
         row = max(0, min(row, site.rows - 1))
 
-        light = is_point_in_sun_3d(site, sun, row, col, height, current_date)
+        light = is_point_in_sun_3d(site, sun, row, col, height, current_date, horizon)
         sun_values.append(light)
 
     return round(sum(sun_values) / len(sun_values) * 100, 1)
@@ -376,6 +387,7 @@ def compute_shadow_map(
     site: SiteModel,
     sun: SunPosition,
     current_date: date | None = None,
+    horizon: HorizonProfile | None = None,
 ) -> ShadowResult:
     """Compute shadow map for a site model given sun position.
 
@@ -386,6 +398,7 @@ def compute_shadow_map(
         site: Rasterized LiDAR site model.
         sun: Sun azimuth and elevation.
         current_date: Date for seasonal transmittance. Defaults to today.
+        horizon: Optional terrain horizon profile for distant hill occlusion.
 
     Returns:
         ShadowResult with float shadow map.
@@ -395,8 +408,10 @@ def compute_shadow_map(
 
     rows, cols = site.dsm.shape
 
-    # If sun is below horizon, everything is in shadow
-    if not sun.is_above_horizon:
+    # If sun is below horizon (astronomical or terrain), everything is in shadow
+    if not sun.is_above_horizon or (
+        horizon is not None and not horizon.is_sun_visible(sun.azimuth, sun.elevation)
+    ):
         return ShadowResult(
             shadow_map=np.ones((rows, cols), dtype=np.float32),
             sun=sun,
@@ -447,6 +462,7 @@ def compute_daily_sun_hours(
     lon: float,
     target_date: date | None = None,
     interval_minutes: int = 15,
+    horizon: HorizonProfile | None = None,
 ) -> np.ndarray:
     """Compute total sun hours per cell for a full day.
 
@@ -483,7 +499,7 @@ def compute_daily_sun_hours(
             if not sun.is_above_horizon:
                 continue
 
-            result = compute_shadow_map(site, sun, target_date)
+            result = compute_shadow_map(site, sun, target_date, horizon)
             sun_hours += result.sun_fraction * interval_hours
 
     _LOGGER.info(

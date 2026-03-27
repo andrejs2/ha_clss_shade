@@ -12,6 +12,7 @@ from .weather_bridge import compute_clearsky_ghi, compute_poa_factor, compute_te
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from .clss_data.horizon import HorizonProfile
     from .clss_data.rasterizer import SiteModel
     from .zones import ZoneSet
 
@@ -90,6 +91,7 @@ def compute_shadow_forecast(
     lon: float,
     target_date: date,
     interval_minutes: int = 30,
+    horizon: HorizonProfile | None = None,
 ) -> list[ShadowForecastStep]:
     """Compute per-zone sun percentages for each time step of a day.
 
@@ -109,7 +111,12 @@ def compute_shadow_forecast(
             )
             sun = compute_sun_position(lat, lon, dt)
 
-            if not sun.is_above_horizon:
+            # Skip shadow computation if sun is below horizon (astronomical or terrain)
+            sun_blocked = (
+                not sun.is_above_horizon
+                or (horizon is not None and not horizon.is_sun_visible(sun.azimuth, sun.elevation))
+            )
+            if sun_blocked:
                 steps.append(ShadowForecastStep(
                     dt=dt,
                     sun_elevation=sun.elevation,
@@ -118,7 +125,7 @@ def compute_shadow_forecast(
                 ))
                 continue
 
-            result = compute_shadow_map(site, sun, target_date)
+            result = compute_shadow_map(site, sun, target_date, horizon)
 
             zone_sun: dict[str, float] = {}
             for name in zones.names:
@@ -164,7 +171,7 @@ def interpolate_weather(
         temperature, and precipitation.
     """
     if not weather_entries:
-        return [{"cloud_coverage": None, "temperature": None, "precipitation": None}
+        return [{"cloud_coverage": None, "temperature": None, "precipitation": None, "ghi": None}
                 for _ in shadow_steps]
 
     # Parse weather datetimes
@@ -180,7 +187,7 @@ def interpolate_weather(
             wx_times.append(dt_str)
 
     if not wx_times:
-        return [{"cloud_coverage": None, "temperature": None, "precipitation": None}
+        return [{"cloud_coverage": None, "temperature": None, "precipitation": None, "ghi": None}
                 for _ in shadow_steps]
 
     result = []
@@ -219,7 +226,7 @@ def _interpolate_at(
     if after_idx is None and before_idx is not None:
         return _extract_weather(weather_entries[before_idx])
     if before_idx is None and after_idx is None:
-        return {"cloud_coverage": None, "temperature": None, "precipitation": None}
+        return {"cloud_coverage": None, "temperature": None, "precipitation": None, "ghi": None}
 
     if before_idx == after_idx:
         return _extract_weather(weather_entries[before_idx])
@@ -253,6 +260,7 @@ def _interpolate_at(
         "cloud_coverage": _lerp("cloud_coverage"),
         "temperature": _lerp("temperature"),
         "precipitation": _lerp("precipitation"),
+        "ghi": _lerp("ghi"),
     }
 
 
@@ -262,6 +270,7 @@ def _extract_weather(entry: dict) -> dict:
         "cloud_coverage": entry.get("cloud_coverage"),
         "temperature": entry.get("temperature"),
         "precipitation": entry.get("precipitation"),
+        "ghi": entry.get("ghi"),
     }
 
 
@@ -326,16 +335,23 @@ def assemble_pv_forecast(
             panel_azimuth=panel_azimuth,
         )
 
-        # Cloud factor (EMHASS-style: 35% diffuse floor at full overcast)
+        # GHI: prefer direct Open-Meteo forecast, fall back to cloud model
+        wx_ghi = wx.get("ghi")
         cloud_cov = wx.get("cloud_coverage")
-        if cloud_cov is not None:
+
+        if wx_ghi is not None and wx_ghi > 0:
+            # Direct GHI from Open-Meteo (more accurate than cloud model)
+            cloud_factor = 1.0  # GHI already includes cloud attenuation
+            estimated_radiation = wx_ghi * poa
+        elif cloud_cov is not None:
+            # Fallback: EMHASS-style cloud model (35% diffuse floor)
             cloud_factor = 0.35 + 0.65 * (1.0 - cloud_cov / 100.0)
+            clearsky_ghi = compute_clearsky_ghi(step.sun_elevation, step.dt.timetuple().tm_yday)
+            estimated_radiation = clearsky_ghi * cloud_factor * poa
         else:
             cloud_factor = 0.675  # assume ~50% cloud if no data
-
-        # Clear-sky GHI (Haurwitz model) with cloud attenuation
-        clearsky_ghi = compute_clearsky_ghi(step.sun_elevation, step.dt.timetuple().tm_yday)
-        estimated_radiation = clearsky_ghi * cloud_factor * poa
+            clearsky_ghi = compute_clearsky_ghi(step.sun_elevation, step.dt.timetuple().tm_yday)
+            estimated_radiation = clearsky_ghi * cloud_factor * poa
 
         # Temperature derating
         temp_factor = compute_temperature_derating(wx.get("temperature"))

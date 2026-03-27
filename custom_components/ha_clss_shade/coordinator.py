@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -16,6 +17,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
+from .clss_data.horizon import HorizonProfile, compute_horizon_profile
 from .clss_data.rasterizer import SiteModel, rasterize_laz
 from .clss_data.slovenian_downloader import (
     ArsoLidarDownloader,
@@ -45,7 +47,7 @@ from .const import (
     INCA_REFRESH_INTERVAL_MIN,
 )
 from .inca_client import fetch_inca_solar_radiation
-from .openmeteo_client import fetch_openmeteo_ghi
+from .openmeteo_client import fetch_openmeteo_forecast, fetch_openmeteo_ghi
 from .forecast import (
     ForecastData,
     ShadowForecastStep,
@@ -148,10 +150,12 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
         self._data_dir = Path(hass.config.path(DATA_DIR_NAME, entry.entry_id))
         self._data_dir.mkdir(parents=True, exist_ok=True)
 
-        # Site model and zones (loaded once, reused)
+        # Site model, zones, and horizon profile (loaded once, reused)
         self._site: SiteModel | None = None
         self._zones: ZoneSet | None = None
+        self._horizon: HorizonProfile | None = None
         self._site_path = self._data_dir / "site_model.npz"
+        self._horizon_path = self._data_dir / "horizon_profile.npz"
 
         # ARSO weather entity mapping (discovered once)
         self._arso_entities: dict[str, str] | None = None
@@ -167,10 +171,38 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
         self._shadow_forecast_task: asyncio.Task | None = None
         self._weather_entity_id: str = ""
 
+        # Open-Meteo hourly forecast (GHI + temp + cloud)
+        self._openmeteo_forecast_cache: list[dict] = []
+        self._openmeteo_forecast_fetched_at: datetime | None = None
+
         # INCA nowcasting state
         self._inca_ghi: float | None = None
         self._inca_timestamp: str | None = None
         self._inca_fetched_at: datetime | None = None
+
+    def _load_performance_factor(self) -> float:
+        """Load persisted performance factor EMA from JSON file."""
+        pf_path = self._data_dir / "performance_factor.json"
+        if pf_path.exists():
+            try:
+                data = json.loads(pf_path.read_text())
+                ema = float(data.get("ema", 1.0))
+                _LOGGER.info("Loaded performance factor EMA: %.3f", ema)
+                return ema
+            except (json.JSONDecodeError, ValueError, OSError) as err:
+                _LOGGER.warning("Failed to load performance factor: %s", err)
+        return 1.0
+
+    def _save_performance_factor(self) -> None:
+        """Persist performance factor EMA to JSON file."""
+        pf_path = self._data_dir / "performance_factor.json"
+        try:
+            pf_path.write_text(json.dumps({
+                "ema": round(self._performance_factor_ema, 6),
+                "updated_at": datetime.now(tz=timezone.utc).isoformat(),
+            }))
+        except OSError as err:
+            _LOGGER.warning("Failed to save performance factor: %s", err)
 
     @property
     def latitude(self) -> float:
@@ -264,6 +296,31 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
                     )
 
             _LOGGER.info("All zones: %s", self._zones.names)
+
+        # Load persisted performance factor
+        self._performance_factor_ema = await self.hass.async_add_executor_job(
+            self._load_performance_factor
+        )
+
+        # Load or compute horizon profile (DEM-based terrain obstruction)
+        if self._horizon_path.exists():
+            _LOGGER.info("Loading cached horizon profile from %s", self._horizon_path)
+            self._horizon = await self.hass.async_add_executor_job(
+                HorizonProfile.load, self._horizon_path
+            )
+        else:
+            _LOGGER.info("Computing horizon profile for (%.4f, %.4f)...", self._lat, self._lon)
+            try:
+                session = async_get_clientsession(self.hass)
+                self._horizon = await compute_horizon_profile(
+                    session, self._lat, self._lon,
+                )
+                await self.hass.async_add_executor_job(
+                    self._horizon.save, self._horizon_path,
+                )
+                _LOGGER.info("Horizon profile saved to %s", self._horizon_path)
+            except Exception:
+                _LOGGER.exception("Horizon profile computation failed — continuing without")
 
         # Discover ARSO weather entities
         self._arso_entities = find_arso_entities(self.hass)
@@ -400,6 +457,7 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
 
         site = self._site
         zones = self._zones
+        horizon = self._horizon
         lat, lon = self._lat, self._lon
         existing_cache = dict(self._shadow_forecast_cache)
         existing_timestamps = dict(self._shadow_forecast_day_computed)
@@ -418,7 +476,9 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
                         result[key] = existing_cache[key]
                         continue
 
-                result[key] = compute_shadow_forecast(site, zones, lat, lon, target, step)
+                result[key] = compute_shadow_forecast(
+                    site, zones, lat, lon, target, step, horizon,
+                )
             return result
 
         try:
@@ -443,6 +503,20 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
         except Exception:
             _LOGGER.exception("Shadow forecast computation failed")
 
+    async def _async_refresh_openmeteo_forecast(self) -> None:
+        """Fetch hourly GHI forecast from Open-Meteo (free, global)."""
+        try:
+            session = async_get_clientsession(self.hass)
+            result = await fetch_openmeteo_forecast(
+                session, self._lat, self._lon, forecast_days=FORECAST_DAYS,
+            )
+            if result:
+                self._openmeteo_forecast_cache = result
+                self._openmeteo_forecast_fetched_at = datetime.now(tz=timezone.utc)
+                _LOGGER.debug("Open-Meteo forecast fetched: %d entries", len(result))
+        except Exception:
+            _LOGGER.exception("Open-Meteo forecast fetch failed")
+
     async def _async_refresh_weather_forecast(self) -> None:
         """Fetch hourly weather forecast from HA weather entity."""
         # Lazy discovery: retry if weather entity wasn't found at setup
@@ -460,6 +534,43 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
         except Exception:
             _LOGGER.exception("Weather forecast fetch failed")
 
+    def _merge_weather_sources(self) -> list[dict]:
+        """Merge Open-Meteo GHI with ARSO weather forecast.
+
+        Open-Meteo provides hourly GHI (direct radiation forecast).
+        ARSO provides 3h cloud_coverage + temperature + precipitation.
+        Merged result has all fields; GHI from Open-Meteo when available.
+        """
+        # Start with ARSO weather forecast (3h intervals, has cloud/temp/precip)
+        arso_by_dt: dict[str, dict] = {}
+        for entry in self._weather_forecast_cache:
+            dt_str = entry.get("datetime", "")
+            if dt_str:
+                arso_by_dt[dt_str] = entry
+
+        # Build merged list from Open-Meteo (hourly, has GHI)
+        if self._openmeteo_forecast_cache:
+            merged = []
+            for om_entry in self._openmeteo_forecast_cache:
+                dt_str = om_entry.get("datetime", "")
+                entry = {
+                    "datetime": dt_str,
+                    "ghi": om_entry.get("ghi"),
+                    "temperature": om_entry.get("temperature"),
+                    "cloud_coverage": om_entry.get("cloud_coverage"),
+                    "precipitation": None,
+                }
+                # Overlay ARSO data for fields it has better coverage on
+                arso = arso_by_dt.get(dt_str)
+                if arso:
+                    if arso.get("precipitation") is not None:
+                        entry["precipitation"] = arso["precipitation"]
+                merged.append(entry)
+            return merged
+
+        # No Open-Meteo data: use ARSO only (no GHI field)
+        return self._weather_forecast_cache
+
     def _assemble_forecast(self, now: datetime) -> ForecastData | None:
         """Assemble PV forecast from cached shadow and weather data."""
         if not self._shadow_forecast_cache:
@@ -468,6 +579,9 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
         today = now.date()
         days: list = []
 
+        # Merge weather sources: Open-Meteo GHI (primary) + ARSO cloud (fallback)
+        merged_weather = self._merge_weather_sources()
+
         for day_offset in range(FORECAST_DAYS):
             target_date = today + timedelta(days=day_offset)
             shadow_steps = self._shadow_forecast_cache.get(target_date.isoformat())
@@ -475,7 +589,7 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
                 continue
 
             interval = FORECAST_STEP_MINUTES if day_offset < 2 else FORECAST_STEP_MINUTES_FAR
-            weather_aligned = interpolate_weather(shadow_steps, self._weather_forecast_cache)
+            weather_aligned = interpolate_weather(shadow_steps, merged_weather)
 
             result = assemble_pv_forecast(
                 shadow_steps=shadow_steps,
@@ -589,6 +703,14 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
             if weather_stale:
                 await self._async_refresh_weather_forecast()
 
+            openmeteo_stale = (
+                self._openmeteo_forecast_fetched_at is None
+                or (now - self._openmeteo_forecast_fetched_at)
+                > timedelta(minutes=DEFAULT_FORECAST_WEATHER_INTERVAL_MIN)
+            )
+            if openmeteo_stale:
+                await self._async_refresh_openmeteo_forecast()
+
             forecast = self._assemble_forecast(now)
 
             return ClssShadeData(
@@ -619,7 +741,7 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
         try:
             # Shadow computation (CPU-bound, ~1-2s)
             result = await self.hass.async_add_executor_job(
-                compute_shadow_map, self._site, sun, now.date(),
+                compute_shadow_map, self._site, sun, now.date(), self._horizon,
             )
 
             mean_shade = float(np.mean(result.shadow_map) * 100)
@@ -726,10 +848,21 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
             if weather_stale:
                 await self._async_refresh_weather_forecast()
 
+            openmeteo_stale = (
+                self._openmeteo_forecast_fetched_at is None
+                or (now - self._openmeteo_forecast_fetched_at)
+                > timedelta(minutes=DEFAULT_FORECAST_WEATHER_INTERVAL_MIN)
+            )
+            if openmeteo_stale:
+                await self._async_refresh_openmeteo_forecast()
+
             # Update performance factor EMA (only with reliable daytime data)
             if pv_perf is not None and sun.elevation > 10.0:
                 self._performance_factor_ema = update_performance_ema(
                     self._performance_factor_ema, pv_perf
+                )
+                await self.hass.async_add_executor_job(
+                    self._save_performance_factor
                 )
 
             # Assemble forecast from cached data
@@ -744,7 +877,8 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
                     points = z3d.get("points", [])
                     if name and points:
                         sun_pct = compute_3d_zone_sun_percent(
-                            self._site, sun, points
+                            self._site, sun, points,
+                            horizon=self._horizon,
                         )
                         zones_3d_data[name] = sun_pct
 

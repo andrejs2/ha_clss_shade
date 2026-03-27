@@ -284,12 +284,13 @@ def _build_grids(
     has_dsm = dsm_z_max > -np.inf
     dsm[has_dsm] = dsm_z_max[has_dsm].astype(np.float32)
 
-    # Fill DTM gaps with DSM where available (fallback for cells with no ground points)
-    dtm_gaps = np.isnan(dtm) & ~np.isnan(dsm)
-    dtm[dtm_gaps] = dsm[dtm_gaps]
-
-    # Fill remaining gaps with nearest neighbor interpolation
+    # Fill DSM gaps with nearest neighbor interpolation
     dsm = _fill_nan_nearest(dsm)
+
+    # Fill DTM gaps: interpolate from ground-classified cells only.
+    # Previous approach used DSM as fallback, but under dense vegetation
+    # DSM includes tree canopy height → artificial terrain bumps.
+    # Nearest-neighbor from actual ground cells gives smooth terrain.
     dtm = _fill_nan_nearest(dtm)
 
     filled_cells = np.sum(~np.isnan(dsm))

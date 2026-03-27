@@ -1,4 +1,4 @@
-"""Open-Meteo client — fetch GHI for locations not covered by INCA."""
+"""Open-Meteo client — fetch current GHI and hourly forecast."""
 
 from __future__ import annotations
 
@@ -10,6 +10,68 @@ import aiohttp
 _LOGGER = logging.getLogger(__name__)
 
 OPENMETEO_URL = "https://api.open-meteo.com/v1/forecast"
+
+
+async def fetch_openmeteo_forecast(
+    session: aiohttp.ClientSession,
+    lat: float,
+    lon: float,
+    forecast_days: int = 5,
+) -> list[dict]:
+    """Fetch hourly GHI + temperature + cloud forecast from Open-Meteo.
+
+    Free, no API key, global coverage, 1-hour resolution.
+    Uses the same Copernicus/ECMWF models as professional weather services.
+
+    Returns:
+        List of dicts with keys: datetime, ghi, temperature, cloud_coverage.
+        Empty list on failure.
+    """
+    try:
+        params = {
+            "latitude": round(lat, 4),
+            "longitude": round(lon, 4),
+            "hourly": "shortwave_radiation,temperature_2m,cloud_cover",
+            "forecast_days": forecast_days,
+            "timezone": "UTC",
+        }
+        async with session.get(
+            OPENMETEO_URL,
+            params=params,
+            timeout=aiohttp.ClientTimeout(total=15),
+        ) as resp:
+            if resp.status != 200:
+                _LOGGER.warning("Open-Meteo forecast fetch failed: HTTP %d", resp.status)
+                return []
+            data = await resp.json()
+
+        hourly = data.get("hourly", {})
+        times = hourly.get("time", [])
+        ghi_values = hourly.get("shortwave_radiation", [])
+        temp_values = hourly.get("temperature_2m", [])
+        cloud_values = hourly.get("cloud_cover", [])
+
+        if not times:
+            return []
+
+        result = []
+        for i, t_str in enumerate(times):
+            result.append({
+                "datetime": t_str,
+                "ghi": ghi_values[i] if i < len(ghi_values) else None,
+                "temperature": temp_values[i] if i < len(temp_values) else None,
+                "cloud_coverage": cloud_values[i] if i < len(cloud_values) else None,
+            })
+
+        _LOGGER.info(
+            "Open-Meteo forecast: %d hourly entries for %d days",
+            len(result), forecast_days,
+        )
+        return result
+
+    except Exception:
+        _LOGGER.exception("Open-Meteo forecast fetch failed")
+        return []
 
 
 async def fetch_openmeteo_ghi(

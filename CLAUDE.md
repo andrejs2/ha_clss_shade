@@ -13,6 +13,7 @@ ha_clss_shade/
       geo.py                           # WGS84 <-> EPSG:3794 coordinate transforms
       slovenian_downloader.py          # ARSO tile discovery + async LAZ download
       rasterizer.py                    # LAZ -> DSM/DTM/classification numpy arrays
+      horizon.py                       # DEM horizon profile (Open-Meteo elevation API)
     frontend/                          # Panel UI files
       panel.html                       # Zone editor (Leaflet 2D + Three.js 3D)
       viewer3d.js                      # Three.js terrain viewer + 3D zone drawing
@@ -22,7 +23,7 @@ ha_clss_shade/
     forecast.py                        # PV forecast: shadow + weather + Haurwitz clear-sky
     weather_bridge.py                  # ARSO weather + compute_clearsky_ghi + temp derating
     inca_client.py                     # ARSO INCA nowcasting (si0zm PNG → GHI)
-    openmeteo_client.py                # Open-Meteo GHI fallback (free, global)
+    openmeteo_client.py                # Open-Meteo GHI current + hourly forecast (free, global)
     websocket_api.py                   # WebSocket endpoints (config, zones, terrain, 3D zones)
     config_flow.py                     # UI configuration
     const.py                           # Constants, domain, runtime data
@@ -45,21 +46,25 @@ ha_clss_shade/
 - Shadow engine is CRS-agnostic (numpy arrays in meters)
 - Reads weather data from slovenian_weather_integration via HA state machine
 
-## Current Capabilities (as of Seja 4, 2026-03-27)
+## Current Capabilities (as of Seja 5, 2026-03-27)
 
 ### Shadow & Shade Analysis
 - Ray-marching shadow computation over LiDAR DSM grid
 - Per-zone shade/sun percentage (auto-detected + custom polygon zones)
 - Seasonal vegetation transmittance (leaf-on/leaf-off)
 - Shadow forecast: 5-day, 30-min resolution (days 0-1), 60-min (days 2-4)
+- **DEM horizon profile**: distant hill occlusion via Open-Meteo elevation API (5km radius, 72 azimuths)
+- **Improved DTM**: ground-only interpolation under dense vegetation (no artificial bumps)
 
 ### PV Forecast
 - Haurwitz clear-sky GHI model (replaces fixed 800 W/m², validated ±5% on clear days)
-- EMHASS-style cloud formula (35% diffuse floor at full overcast)
+- **Open-Meteo hourly GHI forecast** (primary, replaces cloud model when available)
+- EMHASS-style cloud formula (35% diffuse floor — fallback when no GHI data)
 - Temperature derating (-0.34%/°C, JinkoSolar Tiger spec)
 - POA (Plane-of-Array) factor per zone per hour
-- Performance factor EMA calibration (alpha=0.1)
-- GHI priority: INCA (1km) → Open-Meteo (global, free) → cloud model fallback
+- Performance factor EMA calibration (alpha=0.1, **persistent across restarts**)
+- GHI priority: Open-Meteo hourly forecast (primary) → INCA (1km) → cloud model fallback
+- Forecast GHI: Open-Meteo hourly → ARSO cloud model fallback
 - Sensors: today/tomorrow/5-day kWh, next hour W, next 1h/3h Wh, rest-of-day kWh
 
 ### 3D Zone Editor (Phase 5 — unique in HA ecosystem)
@@ -154,12 +159,10 @@ Esri World Imagery  # Satellite tiles (REST export)
 ```
 
 ## Known Limitations
-- Shadow engine only covers LiDAR radius (200m) — distant hills NOT modeled
-  - Solution planned: DEM horizon profile (Copernicus 30m, 5km radius)
-- DTM gap-fill uses DSM under dense trees → artificial bumps
-  - Solution planned: interpolation from surrounding ground cells
+- ~~Shadow engine only covers LiDAR radius (200m)~~ — FIXED: DEM horizon profile via Open-Meteo elevation API (5km, 72 azimuths)
+- ~~DTM gap-fill uses DSM under dense trees~~ — FIXED: interpolation from ground cells only
+- ~~Performance factor EMA resets on HA restart~~ — FIXED: persisted to JSON file
 - INCA si0zm covers only SE Slovenia — Open-Meteo used as fallback
-- Performance factor EMA resets on HA restart (not yet persistent)
 - 3D viewer: satellite texture quality limited by Esri export resolution
 
 ## Related Projects

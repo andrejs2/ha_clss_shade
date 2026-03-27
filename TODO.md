@@ -57,7 +57,7 @@ napovedjo (oblacnost) in performance faktorjem → natancna napoved PV proizvodn
 #### 3.2 Kalibracija z performance faktorjem
 - [x] Tekoci povprecni performance_factor (EMA, alpha=0.1)
 - [x] Samo dnevni podatki (sun_elevation > 10°) za robustno kalibracijo
-- [ ] Shranjevanje EMA v persistent datoteko (zdaj se resetira ob restartu)
+- [x] Shranjevanje EMA v persistent datoteko (performance_factor.json v data_dir)
 - [ ] Loceni faktorji za razlicne pogoje (pf_clear, pf_cloudy, pf_mixed)
 
 #### 3.3 Vremenski podatki za napoved
@@ -115,9 +115,9 @@ napovedjo (oblacnost) in performance faktorjem → natancna napoved PV proizvodn
   - [x] 3D zone persistence (shranjevanje/nalaganje prek WebSocket)
   - [x] 3D zone senzorji (sun%/shade% za vsako 3D cono)
   - [x] Satelitska tekstura (Esri World Imagery) na ground mesh
-  - [ ] Horizon profil iz DEM za daljnje hribe (jutranje/večerno sencenje)
-  - [ ] DTM gap-fill izboljšava (interpolacija namesto DSM fallback pod drevesi)
-  - [ ] Open-Meteo urni GHI forecast za forecast.py (namesto cloud modela)
+  - [x] Horizon profil iz DEM za daljnje hribe (Open-Meteo elevation API, 72 azimutov × 20 razdalj)
+  - [x] DTM gap-fill izboljšava (interpolacija iz ground celic namesto DSM fallback)
+  - [x] Open-Meteo urni GHI forecast za forecast.py (neposredni GHI namesto cloud modela)
 
 ---
 
@@ -126,8 +126,8 @@ napovedjo (oblacnost) in performance faktorjem → natancna napoved PV proizvodn
 - [x] Blocking I/O v event loop (slovenian_downloader.py: write_text, open) — popravljeno z run_in_executor
 - [x] Zone editor: cone so se mesale (index-based → name-based fix)
 - [ ] GURS DOF WMS layer ne dela v panelu (napacni parametri)
-- [ ] DTM griči pod drevesi (gap-fill iz DSM namesto interpolacije)
-- [ ] Horizon profil: hribi izven LiDAR radija blokirajo jutranje/večerno sonce
+- [x] DTM griči pod drevesi — popravljeno: interpolacija iz ground celic
+- [x] Horizon profil — implementirano: DEM horizon z Open-Meteo elevation API
 
 ---
 
