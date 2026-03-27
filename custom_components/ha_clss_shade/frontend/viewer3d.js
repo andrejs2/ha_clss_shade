@@ -280,27 +280,37 @@ export class TerrainViewer {
   }
 
   _loadSatelliteTexture(mesh, sw, ne, cols, rows) {
-    // Fetch satellite imagery from Esri World Imagery and apply as texture
+    // Fetch satellite imagery from Esri World Imagery via Image element
+    // (avoids CORS issues with TextureLoader)
     const imgSize = Math.min(1024, Math.max(cols, rows));
     const bbox = `${sw[1]},${sw[0]},${ne[1]},${ne[0]}`;
     const url = `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/export?`
       + `bbox=${bbox}&bboxSR=4326&size=${imgSize},${imgSize}`
       + `&imageSR=4326&format=png&f=image`;
 
-    const loader = new THREE.TextureLoader();
-    loader.crossOrigin = 'anonymous';
-    loader.load(url, (texture) => {
+    console.log('Loading satellite texture:', url.substring(0, 80) + '...');
+
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const texture = new THREE.Texture(img);
+      texture.needsUpdate = true;
       texture.minFilter = THREE.LinearFilter;
       texture.magFilter = THREE.LinearFilter;
+      // Flip UV vertically — PlaneGeometry UV origin is top-left,
+      // but our grid row 0 = south = bottom of satellite image
+      texture.flipY = false;
+      mesh.material.dispose();
       mesh.material = new THREE.MeshLambertMaterial({
         map: texture,
         side: THREE.DoubleSide,
       });
-      mesh.material.needsUpdate = true;
-      console.log('Satellite texture loaded');
-    }, undefined, (err) => {
+      console.log(`Satellite texture loaded: ${img.width}x${img.height}`);
+    };
+    img.onerror = (err) => {
       console.warn('Satellite texture failed, keeping classification colors', err);
-    });
+    };
+    img.src = url;
   }
 
   _buildSkirtWalls(dsm, dtm, cls, rows, cols, res, baseH) {
