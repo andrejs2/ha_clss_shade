@@ -340,13 +340,14 @@ def compute_temperature_derating(ambient_temp: float | None) -> float:
     """PV temperature derating for crystalline silicon panels.
 
     Cell temp ≈ ambient + 20 °C (roof-mounted, moderate ventilation).
-    Temperature coefficient: −0.35 %/°C relative to 25 °C STC.
+    Temperature coefficient: −0.34 %/°C relative to 25 °C STC
+    (JinkoSolar Tiger series spec).
     Returns multiplicative factor (e.g. 0.93 at 20 °C ambient).
     """
     if ambient_temp is None:
         return 1.0
     cell_temp = ambient_temp + 20.0
-    return max(0.5, 1.0 + (-0.0035) * (cell_temp - 25.0))
+    return max(0.5, 1.0 + (-0.0034) * (cell_temp - 25.0))
 
 
 def estimate_pv_power(

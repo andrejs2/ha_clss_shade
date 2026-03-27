@@ -281,25 +281,34 @@ Meters za energyDetails: `Production,Consumption,SelfConsumption,FeedIn,Purchase
 - 300 requestov/dan
 - Max 300 parallel per site
 
+### Podatki sistema
+- Paneli: 35° nagib, 220° azimut (SSW)
+- Temp. koeficient: -0.34 %/°C (JinkoSolar Tiger spec)
+
 ### Mesečni vremenski faktorji (iz 5 let podatkov 2021-2026)
 ```
-weather_factor = dejanska_proizvodnja / Haurwitz_clearsky
+weather_factor = dejanska_proizvodnja / Haurwitz_clearsky(35°/220°)
 ```
 
-| Mesec | Weather factor | Opis |
-|-------|---------------|------|
-| Jan | 0.321 | Megla, oblačno |
-| Feb | 0.419 | Megla/oblačno |
-| Mar | 0.562 | Zmerno oblačno |
-| Apr | 0.602 | Zmerno oblačno |
-| Maj | 0.563 | Zmerno oblačno |
-| Jun | 0.694 | Jasni meseci |
-| Jul | 0.696 | Jasni meseci |
-| Aug | 0.674 | Jasni meseci |
-| Sep | 0.588 | Zmerno oblačno |
-| Okt | 0.460 | Zmerno oblačno |
-| Nov | 0.329 | Megla, oblačno |
-| Dec | 0.224 | Megla, oblačno |
+| Mesec | Weather factor | Best day PR | Opis |
+|-------|---------------|-------------|------|
+| Jan | 0.356 | 108% | Megla, oblačno |
+| Feb | 0.458 | 106% | Megla/oblačno |
+| Mar | 0.598 | 111% | Zmerno oblačno |
+| Apr | 0.624 | 110% | Zmerno oblačno |
+| Maj | 0.576 | 107% | Zmerno oblačno |
+| Jun | 0.707 | 99% | Jasni meseci |
+| Jul | 0.710 | 96% | Jasni meseci |
+| Avg | 0.695 | 98% | Jasni meseci |
+| Sep | 0.620 | 105% | Zmerno oblačno |
+| Okt | 0.499 | 102% | Zmerno oblačno |
+| Nov | 0.364 | 98% | Megla, oblačno |
+| Dec | 0.251 | 98% | Megla, oblačno |
 
-Sistem PR na jasnih dnevih: ~97%
+Letni weather factor: 57.6%
 Letni specifični donos: ~1121 kWh/kWp
+
+### Ključna opažanja iz profila
+- **Jutranje sencenje**: ob 8:00 samo 11-38% modela → ovira na vzhodu
+- **Opoldne**: model se ujema 95-110% → Haurwitz natančen
+- **Best day PR > 100%** (spomladi): mogoče albedo od snega ali višja prozornost
