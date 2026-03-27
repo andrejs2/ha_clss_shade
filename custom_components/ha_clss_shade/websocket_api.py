@@ -11,7 +11,7 @@ import voluptuous as vol
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
 
-from .const import CONF_CUSTOM_ZONES, DOMAIN
+from .const import CONF_3D_ZONES, CONF_CUSTOM_ZONES, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -22,6 +22,8 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_get_config)
     websocket_api.async_register_command(hass, ws_save_zones)
     websocket_api.async_register_command(hass, ws_get_terrain)
+    websocket_api.async_register_command(hass, ws_save_3d_zones)
+    websocket_api.async_register_command(hass, ws_get_3d_zones)
 
 
 @websocket_api.websocket_command(
@@ -101,6 +103,73 @@ async def ws_save_zones(
     hass.config_entries.async_update_entry(entry, options=new_options)
 
     _LOGGER.info("Saved %d custom zones for entry %s", len(msg["zones"]), entry.title)
+    connection.send_result(msg["id"], {"saved": len(msg["zones"])})
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): "ha_clss_shade/get_3d_zones"}
+)
+@callback
+def ws_get_3d_zones(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict,
+) -> None:
+    """Return saved 3D zones."""
+    entries = hass.config_entries.async_entries(DOMAIN)
+    if not entries:
+        connection.send_result(msg["id"], {"zones": []})
+        return
+    zones = entries[0].options.get(CONF_3D_ZONES, [])
+    connection.send_result(msg["id"], {"zones": zones})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "ha_clss_shade/save_3d_zones",
+        vol.Optional("entry_id"): str,
+        vol.Required("zones"): [
+            {
+                vol.Required("name"): str,
+                vol.Required("points"): [
+                    {
+                        vol.Required("x"): vol.Coerce(float),
+                        vol.Required("y"): vol.Coerce(float),
+                        vol.Required("z"): vol.Coerce(float),
+                    }
+                ],
+                vol.Optional("color"): str,
+                vol.Optional("zone_type"): str,
+            }
+        ],
+    }
+)
+@websocket_api.async_response
+async def ws_save_3d_zones(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict,
+) -> None:
+    """Save 3D zones from the panel to config entry options."""
+    entries = hass.config_entries.async_entries(DOMAIN)
+    if not entries:
+        connection.send_error(msg["id"], "not_configured", "No CLSS Shade entry found")
+        return
+
+    entry_id = msg.get("entry_id")
+    entry = (
+        next((e for e in entries if e.entry_id == entry_id), None)
+        if entry_id
+        else entries[0]
+    )
+    if entry is None:
+        connection.send_error(msg["id"], "not_found", "Config entry not found")
+        return
+
+    new_options = {**entry.options, CONF_3D_ZONES: msg["zones"]}
+    hass.config_entries.async_update_entry(entry, options=new_options)
+
+    _LOGGER.info("Saved %d 3D zones for entry %s", len(msg["zones"]), entry.title)
     connection.send_result(msg["id"], {"saved": len(msg["zones"])})
 
 

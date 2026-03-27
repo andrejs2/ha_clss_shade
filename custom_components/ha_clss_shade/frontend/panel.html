@@ -649,6 +649,7 @@
   let viewer = null;
   let terrainLoaded = false;
   let mode = '2d'; // '2d' or '3d'
+  let wsConn = null; // reusable WebSocket for 3D ops
 
   const btn2d = document.getElementById('btn-2d');
   const btn3d = document.getElementById('btn-3d');
@@ -676,53 +677,73 @@
     }
   }
 
+  // Reusable WS call for 3D module
+  let _ws3d = null;
+  let _ws3dReady = null;
+  let _ws3dMsgId = 100;
+  let _ws3dPending = {};
+
+  function _ensureWS3d() {
+    if (_ws3d && _ws3d.readyState === WebSocket.OPEN) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      const wsUrl = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/api/websocket';
+      _ws3d = new WebSocket(wsUrl);
+      _ws3d.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        if (data.type === 'auth_required') {
+          const token = getAuthToken();
+          if (token) _ws3d.send(JSON.stringify({ type: 'auth', access_token: token }));
+          else reject(new Error('No auth token'));
+        } else if (data.type === 'auth_ok') {
+          resolve();
+        } else if (data.type === 'auth_invalid') {
+          reject(new Error('Auth failed'));
+        } else if (data.id && _ws3dPending[data.id]) {
+          const cb = _ws3dPending[data.id];
+          delete _ws3dPending[data.id];
+          if (data.success) cb.resolve(data.result);
+          else cb.reject(new Error(data.error?.message || 'WS error'));
+        }
+      };
+      _ws3d.onerror = () => reject(new Error('WebSocket error'));
+    });
+  }
+
+  async function callWS3d(type, payload = {}) {
+    await _ensureWS3d();
+    const id = ++_ws3dMsgId;
+    return new Promise((resolve, reject) => {
+      _ws3dPending[id] = { resolve, reject };
+      _ws3d.send(JSON.stringify({ id, type, ...payload }));
+      setTimeout(() => {
+        if (_ws3dPending[id]) { delete _ws3dPending[id]; reject(new Error('Timeout')); }
+      }, 30000);
+    });
+  }
+
   async function loadTerrain() {
     loading3d.textContent = 'Nalagam 3D teren...';
     loading3d.style.display = 'block';
     try {
-      // Connect to HA WebSocket
-      const wsUrl = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/api/websocket';
-      const ws = new WebSocket(wsUrl);
-
-      const result = await new Promise((resolve, reject) => {
-        let msgId = 1;
-        let authed = false;
-
-        ws.onmessage = (event) => {
-          const data = JSON.parse(event.data);
-
-          if (data.type === 'auth_required') {
-            // Try to get auth token from parent or URL
-            const token = getAuthToken();
-            if (token) {
-              ws.send(JSON.stringify({ type: 'auth', access_token: token }));
-            } else {
-              reject(new Error('No auth token'));
-            }
-          } else if (data.type === 'auth_ok') {
-            authed = true;
-            msgId = 10;
-            ws.send(JSON.stringify({ id: msgId, type: 'ha_clss_shade/get_terrain' }));
-          } else if (data.type === 'auth_invalid') {
-            reject(new Error('Auth failed'));
-          } else if (data.id === msgId && data.type === 'result') {
-            ws.close();
-            if (data.success) {
-              resolve(data.result);
-            } else {
-              reject(new Error(data.error?.message || 'Unknown error'));
-            }
-          }
-        };
-
-        ws.onerror = () => reject(new Error('WebSocket error'));
-        setTimeout(() => reject(new Error('Timeout')), 30000);
-      });
+      const result = await callWS3d('ha_clss_shade/get_terrain');
 
       viewer.loadTerrain(result);
       terrainLoaded = true;
       loading3d.style.display = 'none';
       btnDraw3d.style.display = 'inline-block';
+
+      // Load saved 3D zones
+      try {
+        const saved = await callWS3d('ha_clss_shade/get_3d_zones');
+        if (saved.zones && saved.zones.length > 0) {
+          for (const z of saved.zones) {
+            const mesh = viewer._createZonePolygonMesh(z.points, z.color || '#2196F3');
+            viewer.scene.add(mesh);
+            viewer.completedZones.push({ name: z.name, color: z.color, points: z.points, mesh });
+          }
+          console.log(`Loaded ${saved.zones.length} saved 3D zones`);
+        }
+      } catch(e) { console.warn('Could not load 3D zones:', e); }
 
       // Listen for draw events
       viewer3dDiv.addEventListener('draw-point', (e) => {
@@ -799,13 +820,25 @@
     drawStatus.textContent = 'Klikni na teren za prvo točko...';
   });
 
-  btnFinish3d.addEventListener('click', () => {
+  btnFinish3d.addEventListener('click', async () => {
     if (!viewer) return;
     const name = prompt('Ime 3D cone:', 'nova_cona_3d');
     if (!name) { viewer.cancelDrawing(); }
     else {
       const color = '#' + Math.floor(Math.random()*0xFFFFFF).toString(16).padStart(6,'0');
       viewer.finishDrawing(name, color);
+
+      // Save all 3D zones to HA
+      try {
+        const zonesToSave = viewer.completedZones.map(z => ({
+          name: z.name, color: z.color, points: z.points, zone_type: 'custom',
+        }));
+        await callWS3d('ha_clss_shade/save_3d_zones', { zones: zonesToSave });
+        drawStatus.textContent = `Cona "${name}" shranjena!`;
+      } catch(e) {
+        drawStatus.textContent = 'Napaka pri shranjevanju: ' + e.message;
+        console.error('Save 3D zones error:', e);
+      }
     }
     btnDraw3d.style.display = 'inline-block';
     btnFinish3d.style.display = 'none';
