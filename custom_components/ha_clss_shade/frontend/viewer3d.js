@@ -200,54 +200,56 @@ export class TerrainViewer {
     }
 
     // --- Build separate meshes for buildings and vegetation ---
-    // Each gets its own mesh so user can toggle visibility independently.
-    // Only elevated cells (HAG > 1.5m) go into these; the rest stays in ground.
+    // Individual quads per elevated cell (no shared edges → no transitional slopes)
     const ELEV_THRESHOLD = 1.5;
-    const BUILDING_CLASSES = new Set([6]);
-    const VEGETATION_CLASSES = new Set([3, 4, 5]);
+    const halfW = cols * res / 2;
+    const halfH = rows * res / 2;
 
-    for (const [layerName, classSet, color_bright] of [
-      ['buildings', BUILDING_CLASSES, 1.15],
-      ['vegetation', VEGETATION_CLASSES, 1.1],
+    for (const [layerName, classSet, colorBright] of [
+      ['buildings', new Set([6]), 1.15],
+      ['vegetation', new Set([3, 4, 5]), 1.1],
     ]) {
-      const geo = new THREE.PlaneGeometry(cols * res, rows * res, cols - 1, rows - 1);
-      geo.rotateX(-Math.PI / 2);
-      const pos = geo.attributes.position.array;
-      const colors = new Float32Array(pos.length);
+      const positions = [];
+      const colors = [];
 
       for (let r = 0; r < rows; r++) {
         for (let c = 0; c < cols; c++) {
-          const gridIdx = r * cols + c;
-          const vertIdx = (rows - 1 - r) * cols + c;
-          const vi3 = vertIdx * 3;
+          const idx = r * cols + c;
+          if (!hasData[idx]) continue;
+          const hag = dsm[idx] - dtm[idx];
+          if (hag < ELEV_THRESHOLD || !classSet.has(cls[idx])) continue;
 
-          const hag = dsm[gridIdx] - dtm[gridIdx];
-          const isThisLayer = classSet.has(cls[gridIdx]) && hag > ELEV_THRESHOLD;
+          const y = dsm[idx] - baseH;
+          // Quad corners (in viewer coords, centered)
+          const x0 = c * res - halfW;
+          const x1 = (c + 1) * res - halfW;
+          const z0 = (rows - 1 - r) * res - halfH;
+          const z1 = (rows - r) * res - halfH;
 
-          if (!hasData[gridIdx] || !isThisLayer) {
-            // Push below ground mesh so satellite texture shows through
-            pos[vi3 + 1] = dtm[gridIdx] - baseH - 2.0;
-            colors[vi3] = BG[0]; colors[vi3 + 1] = BG[1]; colors[vi3 + 2] = BG[2];
-            continue;
-          }
+          // Two triangles for the quad (top face)
+          positions.push(
+            x0, y, z0,  x1, y, z0,  x0, y, z1,
+            x1, y, z0,  x1, y, z1,  x0, y, z1,
+          );
 
-          pos[vi3 + 1] = dsm[gridIdx] - baseH;
-
-          const rgb = CLASS_COLORS[cls[gridIdx]] || DEFAULT_COLOR;
-          colors[vi3] = Math.min(1, rgb[0] * color_bright);
-          colors[vi3 + 1] = Math.min(1, rgb[1] * color_bright);
-          colors[vi3 + 2] = Math.min(1, rgb[2] * color_bright);
+          const rgb = CLASS_COLORS[cls[idx]] || DEFAULT_COLOR;
+          const cr = Math.min(1, rgb[0] * colorBright);
+          const cg = Math.min(1, rgb[1] * colorBright);
+          const cb = Math.min(1, rgb[2] * colorBright);
+          for (let v = 0; v < 6; v++) colors.push(cr, cg, cb);
         }
       }
 
-      geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      if (positions.length === 0) continue;
+
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
       geo.computeVertexNormals();
 
       const mat = new THREE.MeshLambertMaterial({
         vertexColors: true,
         side: THREE.DoubleSide,
-        transparent: true,
-        opacity: 0.95,
       });
       const mesh = new THREE.Mesh(geo, mat);
       mesh.castShadow = true;
@@ -274,7 +276,7 @@ export class TerrainViewer {
   _loadSatelliteTexture(mesh, sw, ne, cols, rows) {
     // Fetch satellite imagery from Esri World Imagery via Image element
     // (avoids CORS issues with TextureLoader)
-    const imgSize = Math.min(1024, Math.max(cols, rows));
+    const imgSize = Math.min(2048, Math.max(cols, rows) * 2);
     const bbox = `${sw[1]},${sw[0]},${ne[1]},${ne[0]}`;
     const url = `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/export?`
       + `bbox=${bbox}&bboxSR=4326&size=${imgSize},${imgSize}`
