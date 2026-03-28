@@ -315,6 +315,19 @@ async def ws_get_pointcloud(
         connection.send_error(msg["id"], "no_laz", "No cached LAZ files found")
         return
 
+    # Find POF ortophoto TIF files for RGB coloring
+    # Look in data_dir, data_dir/laz, and data_dir/pof
+    pof_paths = []
+    for search_dir in [coordinator._data_dir, coordinator._data_dir / "laz", coordinator._data_dir / "pof"]:
+        pof_paths.extend(sorted(search_dir.glob("POF_*.tif")))
+    if pof_paths:
+        _LOGGER.info("Found POF ortophoto(s): %s", [p.name for p in pof_paths])
+    else:
+        _LOGGER.info(
+            "No POF ortophoto found. For RGB colors, place POF_*.tif in %s",
+            coordinator._data_dir,
+        )
+
     subsample = msg.get("subsample", 1)
 
     result = await hass.async_add_executor_job(
@@ -322,6 +335,7 @@ async def ws_get_pointcloud(
         laz_paths,
         site,
         subsample,
+        pof_paths,
     )
 
     _LOGGER.info(
@@ -337,16 +351,16 @@ def _build_pointcloud_payload(
     laz_paths: list,
     site,
     subsample: int,
+    pof_paths: list | None = None,
 ) -> dict:
     """Read LAZ files and build point cloud payload (executor thread)."""
-    from .clss_data.rasterizer import _read_laz_clipped_rgb
+    from .clss_data.rasterizer import _read_laz_clipped
 
     radius = site.resolution * max(site.rows, site.cols) / 2
 
-    all_x, all_y, all_z, all_cls, all_rgb = [], [], [], [], []
-    has_rgb = False
+    all_x, all_y, all_z, all_cls = [], [], [], []
     for path in laz_paths:
-        x, y, z, cls, rgb = _read_laz_clipped_rgb(
+        x, y, z, cls = _read_laz_clipped(
             path, site.center_e, site.center_n, radius
         )
         if len(x) > 0:
@@ -354,9 +368,6 @@ def _build_pointcloud_payload(
             all_y.append(y)
             all_z.append(z)
             all_cls.append(cls)
-            if rgb is not None:
-                all_rgb.append(rgb)
-                has_rgb = True
 
     if not all_x:
         return {"num_points": 0, "positions_b64": "", "classification_b64": ""}
@@ -365,7 +376,6 @@ def _build_pointcloud_payload(
     y = np.concatenate(all_y)
     z = np.concatenate(all_z)
     cls = np.concatenate(all_cls)
-    rgb = np.concatenate(all_rgb) if has_rgb else None
 
     # Subsample
     if subsample > 1:
@@ -373,8 +383,15 @@ def _build_pointcloud_payload(
         y = y[::subsample]
         z = z[::subsample]
         cls = cls[::subsample]
+
+    # Sample RGB from POF ortophoto GeoTIFF (if available)
+    rgb = None
+    has_rgb = False
+    if pof_paths:
+        rgb = _sample_pof_rgb(pof_paths, x, y)
         if rgb is not None:
-            rgb = rgb[::subsample]
+            has_rgb = True
+            _LOGGER.info("POF RGB sampled for %d points", len(x))
 
     # Convert D96/TM to viewer-local coordinates (centered, Y=up)
     # Must match mesh coordinate system in viewer3d.js:
@@ -404,7 +421,72 @@ def _build_pointcloud_payload(
     }
 
     if has_rgb and rgb is not None:
-        # RGB as flat uint8 array [r0,g0,b0, r1,g1,b1, ...]
         result["rgb_b64"] = base64.b64encode(rgb.tobytes()).decode("ascii")
 
     return result
+
+
+def _sample_pof_rgb(
+    pof_paths: list, x_d96: np.ndarray, y_d96: np.ndarray
+) -> np.ndarray | None:
+    """Sample RGB colors from POF ortophoto GeoTIFF at point positions.
+
+    POF files are georeferenced GeoTIFF (D96/TM) with ModelTiepointTag
+    and ModelPixelScaleTag. Pixel (0,0) = top-left = (origin_e, origin_n).
+    Northing decreases with increasing row.
+    """
+    from PIL import Image
+
+    rgb = np.zeros((len(x_d96), 3), dtype=np.uint8)
+    colored = np.zeros(len(x_d96), dtype=bool)
+
+    for pof_path in pof_paths:
+        try:
+            img = Image.open(pof_path)
+            if img.mode != "RGB":
+                _LOGGER.warning("POF %s is not RGB (mode=%s), skipping", pof_path.name, img.mode)
+                continue
+
+            tags = img.tag_v2
+            pixel_scale = tags.get(33550)  # ModelPixelScaleTag
+            tiepoint = tags.get(33922)     # ModelTiepointTag
+
+            if not pixel_scale or not tiepoint:
+                _LOGGER.warning("POF %s missing georeference tags, skipping", pof_path.name)
+                continue
+
+            origin_e = tiepoint[3]
+            origin_n = tiepoint[4]
+            sx = pixel_scale[0]
+            sy = pixel_scale[1]
+            w, h = img.size
+
+            # Compute pixel coordinates for all points
+            col = ((x_d96 - origin_e) / sx).astype(np.int32)
+            row = ((origin_n - y_d96) / sy).astype(np.int32)
+
+            # Points within this tile
+            valid = (col >= 0) & (col < w) & (row >= 0) & (row < h) & ~colored
+
+            if not np.any(valid):
+                continue
+
+            # Load as numpy array and sample
+            img_array = np.array(img)
+            rgb[valid] = img_array[row[valid], col[valid]]
+            colored |= valid
+
+            _LOGGER.info(
+                "POF %s: colored %d/%d points (%.0f%%)",
+                pof_path.name, np.sum(valid), len(x_d96),
+                np.sum(valid) / len(x_d96) * 100,
+            )
+
+        except Exception:
+            _LOGGER.exception("Error reading POF %s", pof_path.name)
+            continue
+
+    if not np.any(colored):
+        return None
+
+    return rgb
