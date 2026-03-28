@@ -407,12 +407,14 @@ class ClssShadeSensor(CoordinatorEntity[ClssShadeCoordinator], SensorEntity):
             }
 
         if key == "irrigation_need" and data.weather:
+            # Show which garden area is used for irrigation
+            garden_info = self.coordinator._get_irrigation_garden(data.zones)
             attrs = {
                 "evapotranspiration_mm": data.weather.evapotranspiration,
                 "water_balance_mm": data.weather.water_balance,
                 "vir_podatkov": data.weather.agro_source or "ni podatkov",
-                "garden_shade_percent": data.zones.get("garden", None)
-                and data.zones["garden"].shade_percent,
+                "garden_shade_percent": garden_info[0] if garden_info else None,
+                "garden_area_m2": garden_info[1] if garden_info else None,
             }
             # Add multi-day agrometeo forecast
             for day in data.weather.agro_days:

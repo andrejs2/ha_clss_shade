@@ -439,6 +439,43 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
         )
 
     # ------------------------------------------------------------------
+    # Irrigation helper
+    # ------------------------------------------------------------------
+
+    def _get_irrigation_garden(
+        self, zone_data: dict[str, ZoneData],
+    ) -> tuple[float, float] | None:
+        """Return (shade_percent, area_m2) for irrigation calculation.
+
+        Prefers the sum of user-defined garden-type zones over the
+        auto-detected 'garden' zone, which can cover the entire open area.
+        """
+        if self._zones is None:
+            return None
+
+        # Collect custom garden zones (zone_type == "garden", name != "garden")
+        custom_shade_area = 0.0
+        custom_area = 0.0
+        for name, zd in zone_data.items():
+            if name == "garden":
+                continue
+            zone = self._zones.get(name)
+            if zone and zone.zone_type == "garden" and zd.area_m2 > 0:
+                custom_area += zd.area_m2
+                custom_shade_area += zd.shade_percent * zd.area_m2
+
+        if custom_area > 0:
+            avg_shade = custom_shade_area / custom_area
+            return (avg_shade, custom_area)
+
+        # Fallback: auto-detected garden zone
+        if "garden" in zone_data:
+            g = zone_data["garden"]
+            return (g.shade_percent, g.area_m2)
+
+        return None
+
+    # ------------------------------------------------------------------
     # Forecast helpers
     # ------------------------------------------------------------------
 
@@ -670,14 +707,15 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
                 self._arso_entities = find_arso_entities(self.hass)
             if self._arso_entities:
                 weather = read_arso_weather(self.hass, self._arso_entities)
-                if weather and "garden" in zone_data:
-                    garden = zone_data["garden"]
+                garden_info = self._get_irrigation_garden(zone_data)
+                if weather and garden_info:
+                    shade_pct, area = garden_info
                     irrigation = estimate_irrigation_need(
-                        shade_percent=garden.shade_percent,
+                        shade_percent=shade_pct,
                         evapotranspiration=weather.evapotranspiration,
                         water_balance=weather.water_balance,
                         precipitation_forecast=weather.precipitation_forecast,
-                        area_m2=garden.area_m2,
+                        area_m2=area,
                     )
 
             # Forecast refresh at night too (tomorrow's forecast is useful)
@@ -810,15 +848,16 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
                     zone_data, mean_sun, weather, sun
                 )
 
-                # Irrigation estimate using garden zone shade
-                if "garden" in zone_data:
-                    garden = zone_data["garden"]
+                # Irrigation estimate using garden zones
+                garden_info = self._get_irrigation_garden(zone_data)
+                if garden_info:
+                    shade_pct, area = garden_info
                     irrigation = estimate_irrigation_need(
-                        shade_percent=garden.shade_percent,
+                        shade_percent=shade_pct,
                         evapotranspiration=weather.evapotranspiration,
                         water_balance=weather.water_balance,
                         precipitation_forecast=weather.precipitation_forecast,
-                        area_m2=garden.area_m2,
+                        area_m2=area,
                     )
 
             # Read real PV power and calculate performance factor
