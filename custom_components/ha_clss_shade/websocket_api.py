@@ -269,6 +269,9 @@ def _build_terrain_payload(site) -> dict:
         vol.Optional("subsample", default=1): vol.All(
             vol.Coerce(int), vol.Range(min=1, max=100)
         ),
+        vol.Optional("radius", default=400): vol.All(
+            vol.Coerce(int), vol.Range(min=100, max=2000)
+        ),
     }
 )
 @websocket_api.async_response
@@ -329,6 +332,7 @@ async def ws_get_pointcloud(
         )
 
     subsample = msg.get("subsample", 1)
+    vis_radius = msg.get("radius", 400)
 
     result = await hass.async_add_executor_job(
         _build_pointcloud_payload,
@@ -336,6 +340,7 @@ async def ws_get_pointcloud(
         site,
         subsample,
         pof_paths,
+        vis_radius,
     )
 
     _LOGGER.info(
@@ -347,57 +352,26 @@ async def ws_get_pointcloud(
     connection.send_result(msg["id"], result)
 
 
-def _read_laz_full(path) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Read entire LAZ file, filtering only noise classes."""
-    import laspy
-    from .clss_data.rasterizer import CLASSES_NOISE, READ_CHUNK_SIZE
-
-    all_x, all_y, all_z, all_cls = [], [], [], []
-
-    with laspy.open(path) as reader:
-        for chunk in reader.chunk_iterator(READ_CHUNK_SIZE):
-            x = chunk.x
-            y = chunk.y
-            z = chunk.z
-            cls = chunk.classification
-
-            # Remove noise classes only
-            noise_mask = np.zeros(len(cls), dtype=bool)
-            for nc in CLASSES_NOISE:
-                noise_mask |= cls == nc
-            keep = ~noise_mask
-
-            if np.any(keep):
-                all_x.append(x[keep])
-                all_y.append(y[keep])
-                all_z.append(z[keep])
-                all_cls.append(cls[keep])
-
-    if not all_x:
-        return np.array([]), np.array([]), np.array([]), np.array([], dtype=np.uint8)
-
-    return (
-        np.concatenate(all_x),
-        np.concatenate(all_y),
-        np.concatenate(all_z),
-        np.concatenate(all_cls).astype(np.uint8),
-    )
-
-
 def _build_pointcloud_payload(
     laz_paths: list,
     site,
     subsample: int,
     pof_paths: list | None = None,
+    vis_radius: int = 400,
 ) -> dict:
     """Read LAZ files and build point cloud payload (executor thread).
 
-    Reads the full LAZ tile(s) — not clipped to site radius — so the
-    user sees all surrounding context (trees, buildings, terrain).
+    Uses vis_radius (default 400m) for the visualization clip — larger
+    than the shadow analysis radius so the user sees surrounding context,
+    but not the entire tile(s) which would be too many points.
     """
+    from .clss_data.rasterizer import _read_laz_clipped
+
     all_x, all_y, all_z, all_cls = [], [], [], []
     for path in laz_paths:
-        x, y, z, cls = _read_laz_full(path)
+        x, y, z, cls = _read_laz_clipped(
+            path, site.center_e, site.center_n, vis_radius
+        )
         if len(x) > 0:
             all_x.append(x)
             all_y.append(y)

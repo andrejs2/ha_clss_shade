@@ -190,10 +190,15 @@
       <label style="font-size:11px;color:#888">Velikost točk</label>
       <input type="range" id="pc-size" min="0.5" max="5" step="0.25" value="1.5" style="width:100%;accent-color:#2563eb">
     </div>
+    <div id="pc-radius-row">
+      <label style="font-size:11px;color:#888">Radij prikaza (m)</label>
+      <input type="range" id="pc-radius" min="100" max="600" step="50" value="400" style="width:100%;accent-color:#2563eb">
+      <span id="pc-radius-val" style="font-size:11px;color:#aaa">400 m</span>
+    </div>
     <div id="pc-subsample-row">
       <label style="font-size:11px;color:#888">Podvzorčenje (1=vse)</label>
-      <input type="range" id="pc-subsample" min="1" max="20" step="1" value="8" style="width:100%;accent-color:#2563eb">
-      <span id="pc-subsample-val" style="font-size:11px;color:#aaa">vsaka 8. točka</span>
+      <input type="range" id="pc-subsample" min="1" max="20" step="1" value="4" style="width:100%;accent-color:#2563eb">
+      <span id="pc-subsample-val" style="font-size:11px;color:#aaa">vsaka 4. točka</span>
     </div>
   </div>
 </div>
@@ -952,11 +957,17 @@
   const pcSize = document.getElementById('pc-size');
   const pcSubsample = document.getElementById('pc-subsample');
   const pcSubsampleVal = document.getElementById('pc-subsample-val');
+  const pcRadius = document.getElementById('pc-radius');
+  const pcRadiusVal = document.getElementById('pc-radius-val');
   let pointCloudLoaded = false;
 
   pcSubsample.addEventListener('input', () => {
     const v = parseInt(pcSubsample.value);
     pcSubsampleVal.textContent = v === 1 ? 'vse točke' : `vsaka ${v}. točka`;
+  });
+
+  pcRadius.addEventListener('input', () => {
+    pcRadiusVal.textContent = `${pcRadius.value} m`;
   });
 
   btnPC.addEventListener('click', async () => {
@@ -965,7 +976,8 @@
     btnPC.disabled = true;
     try {
       const sub = parseInt(pcSubsample.value);
-      const result = await callWS3d('ha_clss_shade/get_pointcloud', { subsample: sub }, 120000);
+      const rad = parseInt(pcRadius.value);
+      const result = await callWS3d('ha_clss_shade/get_pointcloud', { subsample: sub, radius: rad }, 120000);
       viewer.loadPointCloud(result);
       pointCloudLoaded = true;
 
