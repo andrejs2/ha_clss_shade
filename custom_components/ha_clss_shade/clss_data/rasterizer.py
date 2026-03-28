@@ -19,8 +19,8 @@ CLASS_GROUND = 2
 # Classes to discard before rasterization
 CLASSES_NOISE = frozenset({0, 1, 7, 17, 18, 21})
 
-# Chunk size for reading large LAZ files
-READ_CHUNK_SIZE = 500_000
+# Chunk size for reading large LAZ files (reduced for lower peak memory)
+READ_CHUNK_SIZE = 200_000
 
 
 @dataclass
@@ -95,8 +95,8 @@ def rasterize_laz(
 ) -> SiteModel:
     """Rasterize LAZ file(s) into a SiteModel.
 
-    Reads point cloud data, clips to a circular area around the center,
-    and builds DSM, DTM, and classification grids.
+    Memory-efficient: reads each tile, updates grids, then frees points.
+    Only one tile's clipped points are in memory at a time.
 
     Args:
         laz_paths: Paths to LAZ/LAS files.
@@ -109,41 +109,107 @@ def rasterize_laz(
     Returns:
         Rasterized SiteModel.
     """
+    import gc
+
     center_e, center_n = wgs84_to_d96tm(center_lat, center_lon)
 
-    # Collect points from all LAZ files
-    all_x, all_y, all_z, all_cls = [], [], [], []
-
-    for laz_path in laz_paths:
-        _LOGGER.info("Reading %s", laz_path.name)
-        x, y, z, cls = _read_laz_clipped(laz_path, center_e, center_n, radius_m)
-        if len(x) > 0:
-            all_x.append(x)
-            all_y.append(y)
-            all_z.append(z)
-            all_cls.append(cls)
-            _LOGGER.info("  %d points within radius", len(x))
-        else:
-            _LOGGER.warning("  No points within radius from %s", laz_path.name)
-
-    if not all_x:
-        raise ValueError("No points found within radius from any LAZ file")
-
-    x = np.concatenate(all_x)
-    y = np.concatenate(all_y)
-    z = np.concatenate(all_z)
-    cls = np.concatenate(all_cls)
-
-    _LOGGER.info("Total points: %d", len(x))
-
-    # Auto-calculate resolution from point density
+    # First pass: read first tile to determine resolution (if auto)
     if resolution is None:
-        resolution = _auto_resolution(x, y, radius_m)
+        x0, y0, _, _ = _read_laz_clipped(laz_paths[0], center_e, center_n, radius_m)
+        if len(x0) > 0:
+            resolution = _auto_resolution(x0, y0, radius_m)
+        else:
+            resolution = 0.5
+        del x0, y0
+        gc.collect()
 
     _LOGGER.info("Grid resolution: %.2f m", resolution)
 
-    # Build grid
-    return _build_grids(x, y, z, cls, center_e, center_n, radius_m, resolution)
+    # Initialize grids once
+    origin_e = center_e - radius_m
+    origin_n = center_n - radius_m
+    grid_size = int(np.ceil(2 * radius_m / resolution))
+
+    dsm_z_max = np.full((grid_size, grid_size), -np.inf, dtype=np.float64)
+    classification = np.zeros((grid_size, grid_size), dtype=np.uint8)
+    ground_sum = np.zeros((grid_size, grid_size), dtype=np.float64)
+    ground_count = np.zeros((grid_size, grid_size), dtype=np.int32)
+
+    total_points = 0
+
+    # Process each tile incrementally — only one tile in memory at a time
+    for laz_path in laz_paths:
+        _LOGGER.info("Reading %s", laz_path.name)
+        x, y, z, cls = _read_laz_clipped(laz_path, center_e, center_n, radius_m)
+
+        if len(x) == 0:
+            _LOGGER.warning("  No points within radius from %s", laz_path.name)
+            continue
+
+        _LOGGER.info("  %d points within radius", len(x))
+        total_points += len(x)
+
+        # Map to grid cells
+        col = ((x - origin_e) / resolution).astype(int)
+        row = ((y - origin_n) / resolution).astype(int)
+        valid = (col >= 0) & (col < grid_size) & (row >= 0) & (row < grid_size)
+        col, row, z, cls = col[valid], row[valid], z[valid], cls[valid]
+
+        # Update ground accumulator (DTM)
+        is_ground = cls == CLASS_GROUND
+        g_row, g_col, g_z = row[is_ground], col[is_ground], z[is_ground]
+        np.add.at(ground_sum, (g_row, g_col), g_z)
+        np.add.at(ground_count, (g_row, g_col), 1)
+
+        # Update DSM (max Z per cell)
+        for i in range(len(row)):
+            r, c = row[i], col[i]
+            if z[i] > dsm_z_max[r, c]:
+                dsm_z_max[r, c] = z[i]
+                classification[r, c] = cls[i]
+
+        # Free tile data before loading next tile
+        del x, y, z, cls, col, row, valid, is_ground, g_row, g_col, g_z
+        gc.collect()
+
+    if total_points == 0:
+        raise ValueError("No points found within radius from any LAZ file")
+
+    _LOGGER.info("Total points: %d", total_points)
+
+    # Finalize DTM
+    dtm = np.full((grid_size, grid_size), np.nan, dtype=np.float32)
+    has_ground = ground_count > 0
+    dtm[has_ground] = (ground_sum[has_ground] / ground_count[has_ground]).astype(np.float32)
+    del ground_sum, ground_count
+
+    # Finalize DSM
+    dsm = np.full((grid_size, grid_size), np.nan, dtype=np.float32)
+    has_dsm = dsm_z_max > -np.inf
+    dsm[has_dsm] = dsm_z_max[has_dsm].astype(np.float32)
+    del dsm_z_max
+
+    # Fill gaps
+    dsm = _fill_nan_nearest(dsm)
+    dtm = _fill_nan_nearest(dtm)
+
+    filled_cells = np.sum(~np.isnan(dsm))
+    total_cells = grid_size * grid_size
+    _LOGGER.info(
+        "Grid %dx%d, %.1f%% filled, res=%.1fm",
+        grid_size, grid_size, filled_cells / total_cells * 100, resolution,
+    )
+
+    return SiteModel(
+        dsm=dsm,
+        dtm=dtm,
+        classification=classification,
+        resolution=resolution,
+        origin_e=origin_e,
+        origin_n=origin_n,
+        center_e=center_e,
+        center_n=center_n,
+    )
 
 
 def _read_laz_clipped(
@@ -308,92 +374,6 @@ def _auto_resolution(x: np.ndarray, y: np.ndarray, radius_m: float) -> float:
     return float(np.clip(res, 0.5, 5.0))
 
 
-def _build_grids(
-    x: np.ndarray,
-    y: np.ndarray,
-    z: np.ndarray,
-    cls: np.ndarray,
-    center_e: float,
-    center_n: float,
-    radius_m: float,
-    resolution: float,
-) -> SiteModel:
-    """Build DSM, DTM, and classification grids from point cloud."""
-    # Grid extent (square bounding box around circular clip)
-    origin_e = center_e - radius_m
-    origin_n = center_n - radius_m
-    grid_size = int(np.ceil(2 * radius_m / resolution))
-
-    # Point -> grid cell indices
-    col = ((x - origin_e) / resolution).astype(int)
-    row = ((y - origin_n) / resolution).astype(int)
-
-    # Clamp to grid bounds
-    valid = (col >= 0) & (col < grid_size) & (row >= 0) & (row < grid_size)
-    col, row, z, cls = col[valid], row[valid], z[valid], cls[valid]
-
-    # Initialize grids
-    dsm = np.full((grid_size, grid_size), np.nan, dtype=np.float32)
-    dtm = np.full((grid_size, grid_size), np.nan, dtype=np.float32)
-    classification = np.zeros((grid_size, grid_size), dtype=np.uint8)
-
-    # Ground accumulator for DTM (mean of ground points)
-    ground_sum = np.zeros((grid_size, grid_size), dtype=np.float64)
-    ground_count = np.zeros((grid_size, grid_size), dtype=np.int32)
-
-    # DSM: max Z per cell, track which class the max-Z point belongs to
-    dsm_z_max = np.full((grid_size, grid_size), -np.inf, dtype=np.float64)
-
-    # Process all points
-    is_ground = cls == CLASS_GROUND
-
-    # Ground points -> DTM
-    g_row, g_col, g_z = row[is_ground], col[is_ground], z[is_ground]
-    np.add.at(ground_sum, (g_row, g_col), g_z)
-    np.add.at(ground_count, (g_row, g_col), 1)
-
-    # All points -> DSM (find max Z per cell)
-    flat_idx = row * grid_size + col
-    for i in range(len(flat_idx)):
-        r, c = row[i], col[i]
-        if z[i] > dsm_z_max[r, c]:
-            dsm_z_max[r, c] = z[i]
-            classification[r, c] = cls[i]
-
-    # Finalize DTM
-    has_ground = ground_count > 0
-    dtm[has_ground] = (ground_sum[has_ground] / ground_count[has_ground]).astype(np.float32)
-
-    # Finalize DSM
-    has_dsm = dsm_z_max > -np.inf
-    dsm[has_dsm] = dsm_z_max[has_dsm].astype(np.float32)
-
-    # Fill DSM gaps with nearest neighbor interpolation
-    dsm = _fill_nan_nearest(dsm)
-
-    # Fill DTM gaps: interpolate from ground-classified cells only.
-    # Previous approach used DSM as fallback, but under dense vegetation
-    # DSM includes tree canopy height → artificial terrain bumps.
-    # Nearest-neighbor from actual ground cells gives smooth terrain.
-    dtm = _fill_nan_nearest(dtm)
-
-    filled_cells = np.sum(~np.isnan(dsm))
-    total_cells = grid_size * grid_size
-    _LOGGER.info(
-        "Grid %dx%d, %.1f%% filled, res=%.1fm",
-        grid_size, grid_size, filled_cells / total_cells * 100, resolution,
-    )
-
-    return SiteModel(
-        dsm=dsm,
-        dtm=dtm,
-        classification=classification,
-        resolution=resolution,
-        origin_e=origin_e,
-        origin_n=origin_n,
-        center_e=center_e,
-        center_n=center_n,
-    )
 
 
 def _fill_nan_nearest(grid: np.ndarray) -> np.ndarray:
