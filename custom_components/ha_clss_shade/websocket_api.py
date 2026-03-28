@@ -347,22 +347,57 @@ async def ws_get_pointcloud(
     connection.send_result(msg["id"], result)
 
 
+def _read_laz_full(path) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Read entire LAZ file, filtering only noise classes."""
+    import laspy
+    from .clss_data.rasterizer import CLASSES_NOISE, READ_CHUNK_SIZE
+
+    all_x, all_y, all_z, all_cls = [], [], [], []
+
+    with laspy.open(path) as reader:
+        for chunk in reader.chunk_iterator(READ_CHUNK_SIZE):
+            x = chunk.x
+            y = chunk.y
+            z = chunk.z
+            cls = chunk.classification
+
+            # Remove noise classes only
+            noise_mask = np.zeros(len(cls), dtype=bool)
+            for nc in CLASSES_NOISE:
+                noise_mask |= cls == nc
+            keep = ~noise_mask
+
+            if np.any(keep):
+                all_x.append(x[keep])
+                all_y.append(y[keep])
+                all_z.append(z[keep])
+                all_cls.append(cls[keep])
+
+    if not all_x:
+        return np.array([]), np.array([]), np.array([]), np.array([], dtype=np.uint8)
+
+    return (
+        np.concatenate(all_x),
+        np.concatenate(all_y),
+        np.concatenate(all_z),
+        np.concatenate(all_cls).astype(np.uint8),
+    )
+
+
 def _build_pointcloud_payload(
     laz_paths: list,
     site,
     subsample: int,
     pof_paths: list | None = None,
 ) -> dict:
-    """Read LAZ files and build point cloud payload (executor thread)."""
-    from .clss_data.rasterizer import _read_laz_clipped
+    """Read LAZ files and build point cloud payload (executor thread).
 
-    radius = site.resolution * max(site.rows, site.cols) / 2
-
+    Reads the full LAZ tile(s) — not clipped to site radius — so the
+    user sees all surrounding context (trees, buildings, terrain).
+    """
     all_x, all_y, all_z, all_cls = [], [], [], []
     for path in laz_paths:
-        x, y, z, cls = _read_laz_clipped(
-            path, site.center_e, site.center_n, radius
-        )
+        x, y, z, cls = _read_laz_full(path)
         if len(x) > 0:
             all_x.append(x)
             all_y.append(y)
@@ -377,16 +412,29 @@ def _build_pointcloud_payload(
     z = np.concatenate(all_z)
     cls = np.concatenate(all_cls)
 
-    # Filter out points with extreme height-above-ground (noise, birds, wires)
-    # Lookup ground height from DTM grid for each point
-    MAX_HAG = 40.0  # meters — tallest trees/buildings in Slovenia ~30m
+    # Filter out extreme height points (noise, birds, wires)
+    # Use median Z as approximate ground for full-tile filter
+    MAX_HAG = 40.0
+    # For points inside site grid, use DTM; for outside, use simple Z threshold
     col_idx = ((x - site.origin_e) / site.resolution).astype(np.int32)
     row_idx = ((y - site.origin_n) / site.resolution).astype(np.int32)
-    col_idx = np.clip(col_idx, 0, site.cols - 1)
-    row_idx = np.clip(row_idx, 0, site.rows - 1)
-    ground_z = site.dtm[row_idx, col_idx]
-    hag = z - ground_z
-    keep = hag <= MAX_HAG
+    in_grid = (col_idx >= 0) & (col_idx < site.cols) & (row_idx >= 0) & (row_idx < site.rows)
+
+    keep = np.ones(len(x), dtype=bool)
+    # Points inside grid: use DTM for accurate HAG
+    if np.any(in_grid):
+        ci = np.clip(col_idx, 0, site.cols - 1)
+        ri = np.clip(row_idx, 0, site.rows - 1)
+        ground_z = site.dtm[ri[in_grid], ci[in_grid]]
+        hag = z[in_grid] - ground_z
+        mask_in = np.ones(np.sum(in_grid), dtype=bool)
+        mask_in[hag > MAX_HAG] = False
+        keep[in_grid] = mask_in
+    # Points outside grid: simple Z threshold (median + MAX_HAG)
+    if np.any(~in_grid):
+        median_z = np.median(z[in_grid]) if np.any(in_grid) else np.median(z)
+        keep[~in_grid & (z > median_z + MAX_HAG)] = False
+
     if not np.all(keep):
         removed = np.sum(~keep)
         _LOGGER.info("Filtered %d points above %.0fm HAG (%.1f%%)", removed, MAX_HAG, removed / len(x) * 100)

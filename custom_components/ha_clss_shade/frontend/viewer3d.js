@@ -59,10 +59,10 @@ export class TerrainViewer {
     // Scene
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x1a1a2e);
-    this.scene.fog = new THREE.Fog(0x1a1a2e, 500, 1200);
+    this.scene.fog = new THREE.Fog(0x1a1a2e, 800, 2000);
 
     // Camera
-    this.camera = new THREE.PerspectiveCamera(50, w / h, 0.5, 2000);
+    this.camera = new THREE.PerspectiveCamera(50, w / h, 0.5, 3000);
     this.camera.position.set(0, 200, 200);
     this.camera.lookAt(0, 0, 0);
 
@@ -80,7 +80,7 @@ export class TerrainViewer {
     this.controls.dampingFactor = 0.1;
     this.controls.maxPolarAngle = Math.PI * 0.48;
     this.controls.minDistance = 10;
-    this.controls.maxDistance = 800;
+    this.controls.maxDistance = 1500;
 
     // Lighting
     const ambient = new THREE.AmbientLight(0xffffff, 0.4);
