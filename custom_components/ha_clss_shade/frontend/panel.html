@@ -162,7 +162,7 @@
 <body>
 
 <div class="toolbar">
-  <h1>CLSS Shade — Zone Editor <small style="color:#666;font-size:11px">v11</small></h1>
+  <h1>CLSS Shade — Zone Editor <small style="color:#666;font-size:11px">v12</small></h1>
   <span class="status" id="status">Nalagam...</span>
   <button id="btn-2d" class="active">2D</button>
   <button id="btn-3d">3D</button>
@@ -182,6 +182,19 @@
     <label class="layer-toggle"><input type="checkbox" data-layer="buildings" checked> Stavbe</label>
     <label class="layer-toggle"><input type="checkbox" data-layer="vegetation" checked> Vegetacija</label>
     <label class="layer-toggle"><input type="checkbox" data-layer="walls" checked> Stene</label>
+    <div style="height:1px;background:#444;margin:6px 0"></div>
+    <h3>Oblak točk</h3>
+    <button id="btn-pointcloud" style="padding:4px 10px;font-size:12px;border:1px solid #555;border-radius:4px;background:#2a2a3e;color:#e0e0e0;cursor:pointer;width:100%;margin-bottom:6px">Naloži oblak točk</button>
+    <label class="layer-toggle" id="pc-toggle-row" style="display:none"><input type="checkbox" id="pc-visible" checked> Oblak točk</label>
+    <div id="pc-size-row" style="display:none">
+      <label style="font-size:11px;color:#888">Velikost točk</label>
+      <input type="range" id="pc-size" min="0.5" max="5" step="0.25" value="1.5" style="width:100%;accent-color:#2563eb">
+    </div>
+    <div id="pc-subsample-row">
+      <label style="font-size:11px;color:#888">Podvzorčenje (1=vse)</label>
+      <input type="range" id="pc-subsample" min="1" max="20" step="1" value="4" style="width:100%;accent-color:#2563eb">
+      <span id="pc-subsample-val" style="font-size:11px;color:#aaa">vsaka 4. točka</span>
+    </div>
   </div>
 </div>
 
@@ -736,7 +749,7 @@
     });
   }
 
-  async function callWS3d(type, payload = {}) {
+  async function callWS3d(type, payload = {}, timeoutMs = 30000) {
     await _ensureWS3d();
     const id = ++_ws3dMsgId;
     return new Promise((resolve, reject) => {
@@ -744,7 +757,7 @@
       _ws3d.send(JSON.stringify({ id, type, ...payload }));
       setTimeout(() => {
         if (_ws3dPending[id]) { delete _ws3dPending[id]; reject(new Error('Timeout')); }
-      }, 30000);
+      }, timeoutMs);
     });
   }
 
@@ -930,6 +943,74 @@
       zoneList3dItems.appendChild(div);
     }
   }
+
+  // ─── Point Cloud Controls ───
+  const btnPC = document.getElementById('btn-pointcloud');
+  const pcToggleRow = document.getElementById('pc-toggle-row');
+  const pcVisible = document.getElementById('pc-visible');
+  const pcSizeRow = document.getElementById('pc-size-row');
+  const pcSize = document.getElementById('pc-size');
+  const pcSubsample = document.getElementById('pc-subsample');
+  const pcSubsampleVal = document.getElementById('pc-subsample-val');
+  let pointCloudLoaded = false;
+
+  pcSubsample.addEventListener('input', () => {
+    const v = parseInt(pcSubsample.value);
+    pcSubsampleVal.textContent = v === 1 ? 'vse točke' : `vsaka ${v}. točka`;
+  });
+
+  btnPC.addEventListener('click', async () => {
+    if (!viewer || !terrainLoaded) return;
+    btnPC.textContent = 'Nalagam...';
+    btnPC.disabled = true;
+    try {
+      const sub = parseInt(pcSubsample.value);
+      const result = await callWS3d('ha_clss_shade/get_pointcloud', { subsample: sub }, 120000);
+      viewer.loadPointCloud(result);
+      pointCloudLoaded = true;
+
+      // Show controls, hide load button
+      btnPC.textContent = `Naloženo (${result.num_points.toLocaleString()} točk)`;
+      pcToggleRow.style.display = 'flex';
+      pcSizeRow.style.display = 'block';
+
+      // Uncheck mesh layers (buildings, vegetation, walls) since point cloud covers them
+      document.querySelectorAll('input[data-layer]').forEach(cb => {
+        if (cb.dataset.layer !== 'ground') {
+          cb.checked = false;
+          viewer.toggleLayer(cb.dataset.layer, false);
+        }
+      });
+    } catch(e) {
+      btnPC.textContent = 'Napaka: ' + e.message;
+      console.error('Point cloud load error:', e);
+    }
+    btnPC.disabled = false;
+  });
+
+  pcVisible.addEventListener('change', () => {
+    if (!viewer) return;
+    viewer.togglePointCloud(pcVisible.checked);
+    // When hiding point cloud, re-show mesh layers
+    if (!pcVisible.checked) {
+      document.querySelectorAll('input[data-layer]').forEach(cb => {
+        cb.checked = true;
+        viewer.toggleLayer(cb.dataset.layer, true);
+      });
+    } else {
+      // When showing point cloud, hide mesh buildings/vegetation/walls
+      document.querySelectorAll('input[data-layer]').forEach(cb => {
+        if (cb.dataset.layer !== 'ground') {
+          cb.checked = false;
+          viewer.toggleLayer(cb.dataset.layer, false);
+        }
+      });
+    }
+  });
+
+  pcSize.addEventListener('input', () => {
+    if (viewer) viewer.setPointSize(parseFloat(pcSize.value));
+  });
 
   btn2d.addEventListener('click', () => {
     if (viewer && viewer.drawingMode) viewer.cancelDrawing();

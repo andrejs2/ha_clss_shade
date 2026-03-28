@@ -119,6 +119,40 @@ napovedjo (oblacnost) in performance faktorjem → natancna napoved PV proizvodn
   - [x] DTM gap-fill izboljšava (interpolacija iz ground celic namesto DSM fallback)
   - [x] Open-Meteo urni GHI forecast za forecast.py (neposredni GHI namesto cloud modela)
 
+- [ ] **Faza 6: Point cloud 3D vizualizacija** — pravi LiDAR point cloud prikaz (kot CLSS pregledovalnik)
+  - Raziskava: CLSS pregledovalnik (clss.si) uporablja Potree + Three.js, ampak zahteva pretvorbo LAZ → octree.
+    Za naš 200m radij (~1-4M točk) je THREE.Points dovolj brez LOD. Nobena off-the-shelf rešitev ni plug&play za HA panel.
+  - **Pristop: backend pošlje surove točke → THREE.Points rendering v obstoječem viewerju**
+
+  #### 6.1 Backend: WebSocket endpoint za point cloud
+  - [x] Nov WS endpoint `get_pointcloud` — pošlje XYZ + klasifikacijo kot binary
+  - [x] Subsampling opcija (vsaka N-ta točka) za hitrejši prenos
+  - [x] Uporabi obstoječ laspy — brez novih odvisnosti
+  - [ ] Opcija: pošlji samo izbrane klasifikacije (npr. samo stavbe+vegetacija, brez tal)
+
+  #### 6.2 Frontend: THREE.Points rendering
+  - [x] Nov rendering mode v viewer3d.js: `loadPointCloud(data)` poleg obstoječega `loadTerrain(data)`
+  - [x] `THREE.Points` + `THREE.PointsMaterial({ size, sizeAttenuation, vertexColors })`
+  - [x] Barvanje po CLSS klasifikaciji (razširjene barve: 2,3,4,5,6,9 + 10=mostovi, 14=žice, 15=stolpi, 20=objekti)
+  - [x] Prilagodljiva velikost točk (slider ali auto glede na razdaljo kamere)
+  - [x] Toggle med mesh (obstoječ) in point cloud načinom
+
+  #### 6.3 Vizualne izboljšave
+  - [ ] Height-above-ground (HAG) barvanje kot alternativa klasifikaciji (gradient zelena→rumena→rdeča)
+  - [ ] Dinamična sončna luč iz HA senzorjev (dejanski azimut/elevacija sonca)
+  - [ ] Časovni slider za animacijo senc čez dan (iz shadow forecast podatkov)
+  - [ ] Eye-Dome Lighting (EDL) post-processing za boljšo globino
+
+  #### 6.4 Integracija z obstoječim zone editorjem
+  - [ ] Raycasting na THREE.Points za 3D zone risanje
+  - [ ] Ground mesh (DTM) ohrani za ravno klikljivo površino pod točkami
+  - [ ] Zone prikaz (poligoni, sfere) deluje v obeh načinih
+
+  #### 6.5 Prihodnost (opcijsko, če rabimo večje radije)
+  - [ ] COPC format (LAZ → COPC s PDAL) za streaming velikih datasetov
+  - [ ] potree-core npm paket za LOD rendering v obstoječem Three.js scene
+  - [ ] Potree iframe embed kot alternativa za full 1km tile pregled
+
 ---
 
 ## Bugi

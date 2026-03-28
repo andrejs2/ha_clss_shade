@@ -24,6 +24,7 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_get_terrain)
     websocket_api.async_register_command(hass, ws_save_3d_zones)
     websocket_api.async_register_command(hass, ws_get_3d_zones)
+    websocket_api.async_register_command(hass, ws_get_pointcloud)
 
 
 @websocket_api.websocket_command(
@@ -258,4 +259,136 @@ def _build_terrain_payload(site) -> dict:
         "dsm_b64": _encode_grid(site.dsm, "float32"),
         "dtm_b64": _encode_grid(site.dtm, "float32"),
         "classification_b64": _encode_grid(site.classification, "uint8"),
+    }
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "ha_clss_shade/get_pointcloud",
+        vol.Optional("entry_id"): str,
+        vol.Optional("subsample", default=1): vol.All(
+            vol.Coerce(int), vol.Range(min=1, max=100)
+        ),
+    }
+)
+@websocket_api.async_response
+async def ws_get_pointcloud(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict,
+) -> None:
+    """Return raw point cloud data (XYZ + classification) for 3D viewer.
+
+    Points are base64-encoded: positions as float32 (x,y,z interleaved),
+    classification as uint8. Coordinates are viewer-local (centered, Y=up).
+    """
+    entries = hass.config_entries.async_entries(DOMAIN)
+    if not entries:
+        connection.send_error(msg["id"], "not_configured", "No CLSS Shade entry found")
+        return
+
+    entry_id = msg.get("entry_id")
+    entry = (
+        next((e for e in entries if e.entry_id == entry_id), None)
+        if entry_id
+        else entries[0]
+    )
+    if entry is None:
+        connection.send_error(msg["id"], "not_found", "Config entry not found")
+        return
+
+    runtime_data = entry.runtime_data
+    if runtime_data is None:
+        connection.send_error(msg["id"], "not_ready", "Integration not ready")
+        return
+
+    coordinator = runtime_data.coordinator
+    site = coordinator._site
+    if site is None:
+        connection.send_error(msg["id"], "no_data", "Site model not loaded")
+        return
+
+    # Find cached LAZ files
+    laz_dir = coordinator._data_dir / "laz"
+    laz_paths = sorted(laz_dir.glob("TM_*.laz")) if laz_dir.exists() else []
+    if not laz_paths:
+        connection.send_error(msg["id"], "no_laz", "No cached LAZ files found")
+        return
+
+    subsample = msg.get("subsample", 1)
+
+    result = await hass.async_add_executor_job(
+        _build_pointcloud_payload,
+        laz_paths,
+        site,
+        subsample,
+    )
+
+    _LOGGER.info(
+        "Point cloud sent: %d points (subsample=%d), %.1f MB",
+        result["num_points"],
+        subsample,
+        len(result["positions_b64"]) * 3 / 4 / 1_000_000,
+    )
+    connection.send_result(msg["id"], result)
+
+
+def _build_pointcloud_payload(
+    laz_paths: list,
+    site,
+    subsample: int,
+) -> dict:
+    """Read LAZ files and build point cloud payload (executor thread)."""
+    from .clss_data.rasterizer import _read_laz_clipped
+
+    all_x, all_y, all_z, all_cls = [], [], [], []
+    for path in laz_paths:
+        x, y, z, cls = _read_laz_clipped(
+            path, site.center_e, site.center_n, site.resolution * max(site.rows, site.cols) / 2
+        )
+        if len(x) > 0:
+            all_x.append(x)
+            all_y.append(y)
+            all_z.append(z)
+            all_cls.append(cls)
+
+    if not all_x:
+        return {"num_points": 0, "positions_b64": "", "classification_b64": ""}
+
+    x = np.concatenate(all_x)
+    y = np.concatenate(all_y)
+    z = np.concatenate(all_z)
+    cls = np.concatenate(all_cls)
+
+    # Subsample
+    if subsample > 1:
+        x = x[::subsample]
+        y = y[::subsample]
+        z = z[::subsample]
+        cls = cls[::subsample]
+
+    # Convert D96/TM to viewer-local coordinates (centered, Y=up)
+    # Must match mesh coordinate system in viewer3d.js:
+    #   X = (easting - origin_e) - halfW
+    #   Y = elevation - baseH
+    #   Z = halfH - (northing - origin_n)  [north = -Z]
+    half_w = site.cols * site.resolution / 2
+    half_h = site.rows * site.resolution / 2
+    base_h = float(np.min(site.dtm))
+
+    vx = (x - site.origin_e) - half_w       # easting → X (centered)
+    vy = z - base_h                          # elevation → Y (up)
+    vz = half_h - (y - site.origin_n)        # northing → Z (north = -Z, matching mesh)
+
+    # Interleave as [x0,y0,z0, x1,y1,z1, ...]
+    positions = np.empty(len(vx) * 3, dtype=np.float32)
+    positions[0::3] = vx
+    positions[1::3] = vy
+    positions[2::3] = vz
+
+    return {
+        "num_points": len(vx),
+        "resolution": site.resolution,
+        "positions_b64": base64.b64encode(positions.tobytes()).decode("ascii"),
+        "classification_b64": base64.b64encode(cls.astype(np.uint8).tobytes()).decode("ascii"),
     }

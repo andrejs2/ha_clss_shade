@@ -11,7 +11,7 @@
 import * as THREE from 'https://esm.sh/three@0.170.0';
 import { OrbitControls } from 'https://esm.sh/three@0.170.0/examples/jsm/controls/OrbitControls.js';
 
-// Classification colors (ASPRS)
+// Classification colors (ASPRS + CLSS extended)
 const CLASS_COLORS = {
   2: [0.55, 0.45, 0.35],  // Ground — brown
   3: [0.45, 0.70, 0.30],  // Low vegetation — light green
@@ -19,6 +19,11 @@ const CLASS_COLORS = {
   5: [0.15, 0.45, 0.10],  // High vegetation — dark green
   6: [0.70, 0.65, 0.60],  // Building — light gray
   9: [0.30, 0.50, 0.80],  // Water — blue
+  10: [0.60, 0.60, 0.70], // Bridges — blue-gray
+  14: [0.90, 0.80, 0.10], // Power lines — yellow
+  15: [0.75, 0.55, 0.20], // Transmission towers — orange
+  17: [0.60, 0.60, 0.70], // Bridges (alt code) — blue-gray
+  20: [0.85, 0.50, 0.20], // Small objects — orange
 };
 const DEFAULT_COLOR = [0.50, 0.50, 0.50];
 
@@ -34,6 +39,10 @@ export class TerrainViewer {
     this.mouse = new THREE.Vector2();
     this.terrainData = null;
     this._animating = false;
+
+    // Point cloud state
+    this.pointCloudGroup = null;
+    this._pointSize = 1.5;
 
     // Zone drawing state
     this.drawingMode = false;
@@ -271,6 +280,104 @@ export class TerrainViewer {
     this.controls.update();
 
     console.log(`Terrain loaded: ${rows}×${cols}, res=${res}m, height ${minH.toFixed(1)}-${maxH.toFixed(1)}m`);
+  }
+
+  /**
+   * Load point cloud data from WebSocket response.
+   * @param {Object} data - {num_points, positions_b64, classification_b64}
+   */
+  loadPointCloud(data) {
+    if (data.num_points === 0) {
+      console.warn('Point cloud: no points received');
+      return;
+    }
+
+    // Remove old point cloud
+    if (this.pointCloudGroup) {
+      this.scene.remove(this.pointCloudGroup);
+      this.pointCloudGroup.traverse(c => {
+        if (c.geometry) c.geometry.dispose();
+        if (c.material) c.material.dispose();
+      });
+    }
+    this.pointCloudGroup = new THREE.Group();
+    this.pointCloudGroup.name = 'pointcloud';
+
+    // Decode base64 arrays
+    const positions = new Float32Array(
+      Uint8Array.from(atob(data.positions_b64), c => c.charCodeAt(0)).buffer
+    );
+    const cls = new Uint8Array(
+      Uint8Array.from(atob(data.classification_b64), c => c.charCodeAt(0)).buffer
+    );
+    const numPts = data.num_points;
+
+    // Build color array from classification
+    const colors = new Float32Array(numPts * 3);
+    for (let i = 0; i < numPts; i++) {
+      const rgb = CLASS_COLORS[cls[i]] || DEFAULT_COLOR;
+      colors[i * 3] = rgb[0];
+      colors[i * 3 + 1] = rgb[1];
+      colors[i * 3 + 2] = rgb[2];
+    }
+
+    // Create Points geometry
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+    const mat = new THREE.PointsMaterial({
+      size: this._pointSize,
+      sizeAttenuation: true,
+      vertexColors: true,
+    });
+
+    const points = new THREE.Points(geo, mat);
+    points.name = 'points';
+    this.pointCloudGroup.add(points);
+
+    this.scene.add(this.pointCloudGroup);
+
+    // Hide terrain mesh layers when point cloud is shown
+    if (this.terrainGroup) {
+      for (const layer of ['buildings', 'vegetation', 'walls']) {
+        this.toggleLayer(layer, false);
+      }
+    }
+
+    console.log(`Point cloud loaded: ${numPts.toLocaleString()} points, size=${this._pointSize}`);
+  }
+
+  /**
+   * Set point cloud point size.
+   * @param {number} size - Point size (0.5 to 5.0)
+   */
+  setPointSize(size) {
+    this._pointSize = size;
+    if (this.pointCloudGroup) {
+      this.pointCloudGroup.traverse(c => {
+        if (c.material && c.material.size !== undefined) {
+          c.material.size = size;
+        }
+      });
+    }
+  }
+
+  /**
+   * Toggle point cloud visibility.
+   * @param {boolean} visible
+   */
+  togglePointCloud(visible) {
+    if (this.pointCloudGroup) {
+      this.pointCloudGroup.visible = visible;
+    }
+  }
+
+  /**
+   * Check if point cloud is loaded and visible.
+   */
+  hasPointCloud() {
+    return this.pointCloudGroup !== null && this.pointCloudGroup.visible;
   }
 
   _loadSatelliteTexture(mesh, sw, ne, cols, rows) {
@@ -592,6 +699,12 @@ export class TerrainViewer {
   dispose() {
     this._animating = false;
     window.removeEventListener('resize', this._onResize);
+    if (this.pointCloudGroup) {
+      this.pointCloudGroup.traverse(c => {
+        if (c.geometry) c.geometry.dispose();
+        if (c.material) c.material.dispose();
+      });
+    }
     if (this.renderer) {
       this.renderer.dispose();
       this.renderer.domElement.remove();
