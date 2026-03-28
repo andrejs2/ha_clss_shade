@@ -312,13 +312,26 @@ export class TerrainViewer {
     );
     const numPts = data.num_points;
 
-    // Build color array from classification
+    // Build color array: prefer real RGB from LiDAR, fall back to classification
     const colors = new Float32Array(numPts * 3);
-    for (let i = 0; i < numPts; i++) {
-      const rgb = CLASS_COLORS[cls[i]] || DEFAULT_COLOR;
-      colors[i * 3] = rgb[0];
-      colors[i * 3 + 1] = rgb[1];
-      colors[i * 3 + 2] = rgb[2];
+    if (data.has_rgb && data.rgb_b64) {
+      const rgb = new Uint8Array(
+        Uint8Array.from(atob(data.rgb_b64), c => c.charCodeAt(0)).buffer
+      );
+      for (let i = 0; i < numPts; i++) {
+        colors[i * 3] = rgb[i * 3] / 255;
+        colors[i * 3 + 1] = rgb[i * 3 + 1] / 255;
+        colors[i * 3 + 2] = rgb[i * 3 + 2] / 255;
+      }
+      console.log('Point cloud: using real RGB colors from LiDAR');
+    } else {
+      for (let i = 0; i < numPts; i++) {
+        const c = CLASS_COLORS[cls[i]] || DEFAULT_COLOR;
+        colors[i * 3] = c[0];
+        colors[i * 3 + 1] = c[1];
+        colors[i * 3 + 2] = c[2];
+      }
+      console.log('Point cloud: using classification colors (no RGB in data)');
     }
 
     // Create Points geometry

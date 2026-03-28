@@ -339,18 +339,24 @@ def _build_pointcloud_payload(
     subsample: int,
 ) -> dict:
     """Read LAZ files and build point cloud payload (executor thread)."""
-    from .clss_data.rasterizer import _read_laz_clipped
+    from .clss_data.rasterizer import _read_laz_clipped_rgb
 
-    all_x, all_y, all_z, all_cls = [], [], [], []
+    radius = site.resolution * max(site.rows, site.cols) / 2
+
+    all_x, all_y, all_z, all_cls, all_rgb = [], [], [], [], []
+    has_rgb = False
     for path in laz_paths:
-        x, y, z, cls = _read_laz_clipped(
-            path, site.center_e, site.center_n, site.resolution * max(site.rows, site.cols) / 2
+        x, y, z, cls, rgb = _read_laz_clipped_rgb(
+            path, site.center_e, site.center_n, radius
         )
         if len(x) > 0:
             all_x.append(x)
             all_y.append(y)
             all_z.append(z)
             all_cls.append(cls)
+            if rgb is not None:
+                all_rgb.append(rgb)
+                has_rgb = True
 
     if not all_x:
         return {"num_points": 0, "positions_b64": "", "classification_b64": ""}
@@ -359,6 +365,7 @@ def _build_pointcloud_payload(
     y = np.concatenate(all_y)
     z = np.concatenate(all_z)
     cls = np.concatenate(all_cls)
+    rgb = np.concatenate(all_rgb) if has_rgb else None
 
     # Subsample
     if subsample > 1:
@@ -366,6 +373,8 @@ def _build_pointcloud_payload(
         y = y[::subsample]
         z = z[::subsample]
         cls = cls[::subsample]
+        if rgb is not None:
+            rgb = rgb[::subsample]
 
     # Convert D96/TM to viewer-local coordinates (centered, Y=up)
     # Must match mesh coordinate system in viewer3d.js:
@@ -386,9 +395,16 @@ def _build_pointcloud_payload(
     positions[1::3] = vy
     positions[2::3] = vz
 
-    return {
+    result = {
         "num_points": len(vx),
         "resolution": site.resolution,
         "positions_b64": base64.b64encode(positions.tobytes()).decode("ascii"),
         "classification_b64": base64.b64encode(cls.astype(np.uint8).tobytes()).decode("ascii"),
+        "has_rgb": has_rgb,
     }
+
+    if has_rgb and rgb is not None:
+        # RGB as flat uint8 array [r0,g0,b0, r1,g1,b1, ...]
+        result["rgb_b64"] = base64.b64encode(rgb.tobytes()).decode("ascii")
+
+    return result

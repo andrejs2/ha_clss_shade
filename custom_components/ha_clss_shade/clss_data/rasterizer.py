@@ -204,6 +204,90 @@ def _read_laz_clipped(
     )
 
 
+def _read_laz_clipped_rgb(
+    path: Path,
+    center_e: float,
+    center_n: float,
+    radius_m: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray | None]:
+    """Read LAZ file clipped to circular area, with optional RGB.
+
+    Returns (x, y, z, classification, rgb) where rgb is Nx3 uint8 or None.
+    """
+    all_x, all_y, all_z, all_cls = [], [], [], []
+    all_rgb = []
+    has_rgb = None
+
+    e_min = center_e - radius_m
+    e_max = center_e + radius_m
+    n_min = center_n - radius_m
+    n_max = center_n + radius_m
+
+    with laspy.open(path) as reader:
+        if has_rgb is None:
+            dims = {d.name for d in reader.header.point_format.dimensions}
+            has_rgb = "red" in dims and "green" in dims and "blue" in dims
+
+        for chunk in reader.chunk_iterator(READ_CHUNK_SIZE):
+            x = chunk.x
+            y = chunk.y
+            z = chunk.z
+            cls = chunk.classification
+
+            mask = (x >= e_min) & (x <= e_max) & (y >= n_min) & (y <= n_max)
+            x, y, z, cls = x[mask], y[mask], z[mask], cls[mask]
+
+            if has_rgb:
+                r = np.asarray(chunk.red)[mask]
+                g = np.asarray(chunk.green)[mask]
+                b = np.asarray(chunk.blue)[mask]
+
+            if len(x) == 0:
+                continue
+
+            noise_mask = np.zeros(len(cls), dtype=bool)
+            for nc in CLASSES_NOISE:
+                noise_mask |= cls == nc
+            keep = ~noise_mask
+            x, y, z, cls = x[keep], y[keep], z[keep], cls[keep]
+
+            if has_rgb:
+                r, g, b = r[keep], g[keep], b[keep]
+
+            if len(x) == 0:
+                continue
+
+            dist_sq = (x - center_e) ** 2 + (y - center_n) ** 2
+            circle = dist_sq <= radius_m**2
+            all_x.append(x[circle])
+            all_y.append(y[circle])
+            all_z.append(z[circle])
+            all_cls.append(cls[circle])
+
+            if has_rgb:
+                all_rgb.append(np.column_stack([r[circle], g[circle], b[circle]]))
+
+    if not all_x:
+        return np.array([]), np.array([]), np.array([]), np.array([], dtype=np.uint8), None
+
+    rgb = None
+    if has_rgb and all_rgb:
+        rgb_raw = np.concatenate(all_rgb)
+        # LAZ stores 16-bit RGB (0-65535), normalize to 8-bit (0-255)
+        if rgb_raw.max() > 255:
+            rgb = (rgb_raw / 256).astype(np.uint8)
+        else:
+            rgb = rgb_raw.astype(np.uint8)
+
+    return (
+        np.concatenate(all_x),
+        np.concatenate(all_y),
+        np.concatenate(all_z),
+        np.concatenate(all_cls).astype(np.uint8),
+        rgb,
+    )
+
+
 def _auto_resolution(x: np.ndarray, y: np.ndarray, radius_m: float) -> float:
     """Calculate resolution targeting ~4 points per cell.
 
