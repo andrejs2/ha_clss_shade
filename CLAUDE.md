@@ -47,7 +47,7 @@ ha_clss_shade/
 - Horizon profile: Open-Meteo elevation API (Copernicus 30m DEM), 5km radius, 72 azimuths
 - Reads weather data from slovenian_weather_integration via HA state machine
 
-## Current Capabilities (as of Seja 5, 2026-03-27)
+## Current Capabilities (as of Seja 6, 2026-03-28)
 
 ### Shadow & Shade Analysis
 - Ray-marching shadow computation over LiDAR DSM grid
@@ -76,6 +76,11 @@ ha_clss_shade/
 - 3D zone drawing: click points on any surface → finish polygon
 - 3D zone persistence via WebSocket + HA config
 - 3D zone sensors: ray-trace from arbitrary (x,y,z) → sun%/shade%
+- **Point cloud rendering**: raw LiDAR points via THREE.Points (Phase 6)
+  - WebSocket endpoint `get_pointcloud` sends XYZ + classification as binary
+  - Subsampling (1-100), ~314k points at default, ~5 MB transfer
+  - Extended CLSS classification colors (bridges, power lines, towers, objects)
+  - Point size slider, visibility toggle, mesh/pointcloud switch
 - Use cases: facades, windows, under overhangs, apartment buildings
 
 ### Weather Integration
@@ -89,7 +94,7 @@ ha_clss_shade/
 - 2D: Leaflet map with satellite basemaps, Leaflet.Draw zone editing
 - 3D: Three.js viewer with OrbitControls, raycasting, zone drawing
 - [2D]/[3D] toggle, layer controls, zone sidebar with delete
-- WebSocket API: get_config, save_zones, get_terrain, save_3d_zones, get_3d_zones
+- WebSocket API: get_config, save_zones, get_terrain, get_pointcloud, save_3d_zones, get_3d_zones
 
 ### SolarEdge Integration (analysis)
 - Site 2115036: 11.06 kWp, JinkoSolar 395W Tiger, 35°/220° (SSW)

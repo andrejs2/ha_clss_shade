@@ -436,3 +436,74 @@ Open-Meteo urni GHI za PV forecast, perzistenten performance factor.
 - Mesečni weather faktorji kot fallback za dneve brez Open-Meteo
 - Per-zone panel tilt/azimut format (cona:Wp:nagib:azimut)
 - Natančnost tracking: napoved vs realno
+
+---
+
+## Seja 6 — 2026-03-28
+
+### Povzetek
+Popravek senzorja zalivanja (irrigation) — uporaba pravih vrtnih con namesto ogromne avto-detektirane.
+Nova funkcionalnost: prikaz surovega LiDAR oblaka točk (point cloud) v 3D viewerju.
+Raziskava obstoječih open-source point cloud viewerjev (Potree, potree-core, COPC).
+
+### Narejeno
+
+#### 1. Popravek senzorja zalivanja (coordinator.py, sensor.py)
+- **Problem**: senzor `irrigation_need` je prikazoval 97.704 L namesto ~625 L
+- **Vzrok**: avto-detektirana "garden" cona pokriva celotno odprto območje (~40.514 m², 162.054 celic)
+  namesto dejanskih vrtnih con uporabnika (~260 m², 1.041 celic) — 156× prevelika!
+- **Popravek**: nova metoda `_get_irrigation_garden()` v coordinatorju:
+  - Prednostno uporabi vsoto custom con z `zone_type="garden"` (borovnice, vrt_zelenjava, maline, jz_vrt, jv_vrt)
+  - Uteženo povprečje sence glede na površino cone
+  - Avto-detektirana "garden" cona je samo fallback, če ni custom con
+- Atributi senzorja: dodano `garden_area_m2` za preverjanje
+
+#### 2. Raziskava 3D vizualizacije
+- **CLSS pregledovalnik** (clss.si) uporablja Potree (Three.js) z Flycomovo LIFT platformo
+  - Podatki v Potree octree formatu (`cloud.js`), ni surovi LAZ
+  - Lastniška koda, ni uporabna za nas
+- **Pregled off-the-shelf rešitev**:
+  - Potree: najboljši, ampak zahteva pretvorbo LAZ→octree/COPC, iframe embed
+  - potree-core: npm paket za Three.js embed, brez COPC, rabi PotreeConverter
+  - copc.js: COPC čitalnik (MIT), ampak samo reader brez rendererja
+  - Nobena rešitev ni plug&play za HA panel
+- **Odločitev**: THREE.Points v obstoječem viewerju (0 novih odvisnosti)
+
+#### 3. Point cloud rendering (websocket_api.py, viewer3d.js, panel.html)
+- **Backend**: nov WS endpoint `get_pointcloud`
+  - Bere cached LAZ datoteke z `_read_laz_clipped()`
+  - Pošlje XYZ + klasifikacijo kot base64 binary
+  - Subsampling opcija (1-100), privzeto vsaka 4. točka
+  - Koordinate pretvorjene v viewer-local (centrirane, Y=up, north=-Z)
+  - ~314k točk pri subsample=4, ~5 MB transfer
+- **Frontend**: `loadPointCloud()` metoda v TerrainViewer
+  - THREE.Points + THREE.PointsMaterial z vertex colors in sizeAttenuation
+  - `setPointSize()`, `togglePointCloud()`, `hasPointCloud()`
+- **Razširjene CLSS klasifikacijske barve**:
+  - Nove: mostovi (10,17), žice (14), stolpi daljnovodov (15), manjši objekti (20)
+- **Panel UI** (v12):
+  - "Oblak točk" sekcija v layer controls
+  - Gumb za nalaganje, visibility toggle
+  - Point size slider (0.5–5.0), subsample slider (1–20)
+  - Ko se naloži point cloud, se mesh sloji samodejno skrijejo
+
+### Testiranje na HA
+- Popravek zalivanja: po restartu prikazuje 698 L (namesto 97.704 L)
+- Point cloud: čaka na testiranje
+
+### Spremembe
+- **Spremenjene**: coordinator.py, sensor.py, websocket_api.py, viewer3d.js, panel.html, TODO.md
+- **Commiti**: 2 (f4a6b7c, 1b28c19)
+
+### Odprta vprašanja
+- Point cloud rendering: ali se koordinate pravilno ujemajo z mesh? (potrebuje vizualni test)
+- Subsampling: ali je vsaka 4. točka dovolj gost za lep prikaz?
+- WebSocket: ali 5 MB payload povzroča težave na šibkejših napravah?
+- Raycasting na THREE.Points za 3D zone risanje (še ni implementirano)
+
+### Naslednji koraki (Seja 7)
+- Testirati point cloud rendering v HA
+- HAG (height-above-ground) barvanje kot alternativa
+- Dinamična sončna luč iz HA senzorjev
+- Raycasting na point cloud za 3D zone
+- Eye-Dome Lighting (EDL) post-processing za boljšo globino
