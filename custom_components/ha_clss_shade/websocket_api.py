@@ -377,6 +377,21 @@ def _build_pointcloud_payload(
     z = np.concatenate(all_z)
     cls = np.concatenate(all_cls)
 
+    # Filter out points with extreme height-above-ground (noise, birds, wires)
+    # Lookup ground height from DTM grid for each point
+    MAX_HAG = 40.0  # meters — tallest trees/buildings in Slovenia ~30m
+    col_idx = ((x - site.origin_e) / site.resolution).astype(np.int32)
+    row_idx = ((y - site.origin_n) / site.resolution).astype(np.int32)
+    col_idx = np.clip(col_idx, 0, site.cols - 1)
+    row_idx = np.clip(row_idx, 0, site.rows - 1)
+    ground_z = site.dtm[row_idx, col_idx]
+    hag = z - ground_z
+    keep = hag <= MAX_HAG
+    if not np.all(keep):
+        removed = np.sum(~keep)
+        _LOGGER.info("Filtered %d points above %.0fm HAG (%.1f%%)", removed, MAX_HAG, removed / len(x) * 100)
+        x, y, z, cls = x[keep], y[keep], z[keep], cls[keep]
+
     # Subsample
     if subsample > 1:
         x = x[::subsample]
