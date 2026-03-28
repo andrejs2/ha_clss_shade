@@ -76,11 +76,13 @@ ha_clss_shade/
 - 3D zone drawing: click points on any surface → finish polygon
 - 3D zone persistence via WebSocket + HA config
 - 3D zone sensors: ray-trace from arbitrary (x,y,z) → sun%/shade%
-- **Point cloud rendering**: raw LiDAR points via THREE.Points (Phase 6)
-  - WebSocket endpoint `get_pointcloud` sends XYZ + classification as binary
-  - Subsampling (1-100), ~314k points at default, ~5 MB transfer
-  - Extended CLSS classification colors (bridges, power lines, towers, objects)
-  - Point size slider, visibility toggle, mesh/pointcloud switch
+- **Point cloud rendering** (Phase 6): raw LiDAR points via THREE.Points
+  - WebSocket endpoint `get_pointcloud` with configurable vis_radius (100-600m, default 400m)
+  - **POF ortophoto RGB colors** from CLSS aerial imagery (16cm GeoTIFF, user-provided)
+  - Fallback: extended CLSS classification colors (bridges, power lines, towers, objects)
+  - HAG noise filter (40m max height-above-ground)
+  - Subsampling (1-100), point size slider, radius slider, visibility toggle
+  - At r=400m/sub=4: ~1.25M points, ~27 MB transfer
 - Use cases: facades, windows, under overhangs, apartment buildings
 
 ### Weather Integration
@@ -169,7 +171,9 @@ Esri World Imagery  # Satellite tiles (REST export)
 - ~~DTM gap-fill uses DSM under dense trees~~ — FIXED: interpolation from ground cells only
 - ~~Performance factor EMA resets on HA restart~~ — FIXED: persisted to JSON file
 - INCA si0zm covers only SE Slovenia — Open-Meteo used as fallback
-- 3D viewer: satellite texture quality limited by Esri export resolution
+- ~~3D viewer: satellite texture quality limited by Esri export resolution~~ — POF ortophoto (16cm) available
+- POF ortophoto requires manual download from CLSS viewer (Flycom CDN locked)
+- include_neighbors: needs ~3-4 GB RAM for 4-tile rasterization (optimized with incremental processing)
 
 ## Related Projects
 - slovenian_weather_integration: https://github.com/andrejs2/slovenian_weather_integration

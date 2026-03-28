@@ -487,23 +487,64 @@ Raziskava obstoječih open-source point cloud viewerjev (Potree, potree-core, CO
   - Point size slider (0.5–5.0), subsample slider (1–20)
   - Ko se naloži point cloud, se mesh sloji samodejno skrijejo
 
+#### 4. RGB barve iz POF ortofota (websocket_api.py, rasterizer.py)
+- **Ugotovitev**: GKOT LiDAR nima RGB. Barve v CLSS pregledovalniku prihajajo iz **POF** (fotogrametrični ortofoto)
+- **Flycom CDN** (`assets.flycom.si`) je zaklenjen (403) — prenos samo prek CLSS pregledovalnika
+- **CLSS produkti analizirani**: GKOT, DMR, DMP, nDMP, PAS, POF, POFI — URL vzorci, formati
+- **POF format**: GeoTIFF RGB, 6250×6250 px, 0.16m resolucija, 1km tile, D96/TM georeferencirano
+- **Implementacija**: `_sample_pof_rgb()` vzorči barve iz POF za vsako LiDAR točko
+  - Prebere GeoTIFF tiepoint + pixel scale za koordinatno preslikavo
+  - Podpira več POF datotek (sosednji tile-i)
+  - Uporabnik ročno prenese POF_*.tif prek CLSS pregledovalnika in ga kopira v data mapo integracije
+  - Fallback na klasifikacijske barve če POF ni prisoten
+- **Rezultat**: prave barve — rdeče strehe, zelena trava, siv asfalt — kot v CLSS pregledovalniku
+
+#### 5. HAG filter za šumne točke
+- Navpične črte (žice, ptice, LiDAR šum) filtrirane z **max height-above-ground = 40m**
+- Znotraj site grida: uporabi DTM za natančen HAG
+- Zunaj site grida: median Z + 40m prag
+
+#### 6. Vizualizacijski radij (ločen od shadow radija)
+- **Problem**: celoten tile (1km) = ~10M točk, 2 tila = 20M+ → prepočasen prenos + rendering
+- **Rešitev**: `vis_radius` parameter (100-600m, privzeto 400m) — večji od shadow radija za kontekst
+- Slider v panel UI pred nalaganjem
+- Pri r=400m/sub=4: ~1.25M točk, ~27 MB — dobro razmerje med pokritostjo in hitrostjo
+
+#### 7. Optimizacija rasterizer-ja za manj RAM (rasterizer.py)
+- **Problem**: `include_neighbors` (4 tili) → OOM kill pri ~3 GB RAM
+- **Inkrementalna rasterizacija**: procesira en tile naenkrat → posodobi grid → sprosti RAM
+  - Prej: preberi vse tile → kopiči vse točke → zgradi grid
+  - Zdaj: za vsak tile: preberi → update grid → `gc.collect()` → naslednji
+- Chunk size zmanjšan: 500k → 200k za manjši peak memory
+- `_build_grids()` odstranjen — logika integrirana v `rasterize_laz()`
+
+#### 8. Razširitve kamere in fog za večje radije (viewer3d.js)
+- Camera far plane: 2000 → 3000m
+- Fog: 500-1200 → 800-2000m
+- OrbitControls maxDistance: 800 → 1500m
+
 ### Testiranje na HA
-- Popravek zalivanja: po restartu prikazuje 698 L (namesto 97.704 L)
-- Point cloud: čaka na testiranje
+- Popravek zalivanja: po restartu prikazuje 698 L (namesto 97.704 L) ✓
+- Point cloud z klasifikacijskimi barvami: deluje, 1.2M točk ✓
+- POF RGB barve: deluje, 302.716/302.729 točk obarvanih (100%) ✓
+- Navpične črte vidne → HAG filter dodan
+- include_neighbors: OOM pri 4 GB RAM → povečano na 8 GB + optimizacija rasterizer-ja
+- Celoten tile preveč točk → vis_radius=400m z UI sliderjem
 
 ### Spremembe
-- **Spremenjene**: coordinator.py, sensor.py, websocket_api.py, viewer3d.js, panel.html, TODO.md
-- **Commiti**: 2 (f4a6b7c, 1b28c19)
+- **Spremenjene**: coordinator.py, sensor.py, websocket_api.py, viewer3d.js, panel.html, rasterizer.py, TODO.md, CLAUDE.md
+- **Commiti**: 8 (f4a6b7c → f460ef2)
 
 ### Odprta vprašanja
-- Point cloud rendering: ali se koordinate pravilno ujemajo z mesh? (potrebuje vizualni test)
-- Subsampling: ali je vsaka 4. točka dovolj gost za lep prikaz?
-- WebSocket: ali 5 MB payload povzroča težave na šibkejših napravah?
+- HAG filter 40m: ali je dovolj za vse primere? (daljnovodi gredo do ~50m)
+- POF za sosednje tile-e: uporabnik mora ročno prenesti — ali avtomatizirati?
+- include_neighbors OOM: z optimizacijo bi moralo iti pri 4 GB, ampak ni testirano
 - Raycasting na THREE.Points za 3D zone risanje (še ni implementirano)
 
 ### Naslednji koraki (Seja 7)
-- Testirati point cloud rendering v HA
-- HAG (height-above-ground) barvanje kot alternativa
-- Dinamična sončna luč iz HA senzorjev
+- Testirati optimizirani rasterizer z include_neighbors
+- HAG (height-above-ground) barvanje kot alternativa klasifikaciji/RGB
+- Dinamična sončna luč iz HA senzorjev (dejanski azimut/elevacija)
+- Časovni slider za animacijo senc
+- Eye-Dome Lighting (EDL) post-processing
 - Raycasting na point cloud za 3D zone
-- Eye-Dome Lighting (EDL) post-processing za boljšo globino
