@@ -162,6 +162,8 @@ napovedjo (oblacnost) in performance faktorjem → natancna napoved PV proizvodn
 - [ ] GURS DOF WMS layer ne dela v panelu (napacni parametri)
 - [x] DTM griči pod drevesi — popravljeno: interpolacija iz ground celic
 - [x] Horizon profil — implementirano: DEM horizon z Open-Meteo elevation API
+- [x] Oblačnost senzor "unknown" — weather_bridge ujemal _opis namesto numeričnega senzorja (endswith fix)
+- [x] HA startup blokiran 5+ min — neblokirujoč first refresh + background shadow forecast task
 
 ---
 

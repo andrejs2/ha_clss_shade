@@ -548,3 +548,39 @@ Raziskava obstoječih open-source point cloud viewerjev (Potree, potree-core, CO
 - Časovni slider za animacijo senc
 - Eye-Dome Lighting (EDL) post-processing
 - Raycasting na point cloud za 3D zone
+
+---
+
+## Seja 7 — 2026-04-01
+
+### Povzetek
+Bugfix seja: rešena dva produkcijska buga — oblačnost senzor in blokiran HA startup.
+
+### Narejeno
+
+#### 1. Fix: oblačnost senzor "unknown" (weather_bridge.py)
+- **Problem**: `sensor.parcela_oblacnost` je kazal "unknown", čeprav ARSO senzor `sensor.arso_weather_ljubljana_oblacnost` deluje (vrednost: 0)
+- **Vzrok**: `find_arso_entities()` je uporabil `pattern in eid` za iskanje senzorjev. Vzorec `"oblacnost"` se je ujemal tako z `_oblacnost` (numerični, vrednost 0) kot z `_oblacnost_opis` (besedilni, vrednost "jasno"). Če se je `_opis` entiteta našla prva, je bil ta shranjen pod `cloud_coverage` ključ, `_safe_float("jasno")` je vrnil `None`, pravi numerični senzor pa je bil preskočen (`key not in found`).
+- **Popravek**: zamenjava `pattern in eid` z `eid.endswith(f"_{pattern}")` — ujame samo točno ujemanje sufiksa
+- **Rezultat**: oblačnost senzor pravilno prikazuje vrednost
+
+#### 2. Fix: HA startup blokiran 5+ minut (coordinator.py, __init__.py)
+- **Problem**: HA zagon je bil blokiran 5+ minut, bootstrap timeout, "Something is blocking Home Assistant"
+- **Analiza loga**:
+  - `async_config_entry_first_refresh()` v `__init__.py` je čakal na prvi coordinator refresh (~57 sekund za shadow map + INCA + Open-Meteo + weather)
+  - `_async_refresh_shadow_forecast` je bil ustvarjen z `hass.async_create_task()` — HA bootstrap čaka na te taske
+  - Shadow forecast (5 dni × mnogo korakov × ~1s/korak) je trajal minute → bootstrap timeout
+- **Popravek 1**: zamenjava `async_config_entry_first_refresh()` z `async_request_refresh()` — neblokirujoč, senzorji kratko časa "unknown" dokler se prvi izračun ne konča
+- **Popravek 2**: zamenjava `hass.async_create_task()` z `hass.async_create_background_task()` za shadow forecast — HA bootstrap ne čaka na background taske
+- **Rezultat**: HA se požene takoj, senzorji se napolnijo ~1 min po zagonu v ozadju
+
+### Spremembe
+- **Spremenjene**: weather_bridge.py, coordinator.py, __init__.py
+- **Commiti**: 2 (0613b9d, 95a4f9d)
+
+### Naslednji koraki (Seja 8)
+- Testirati optimizirani rasterizer z include_neighbors
+- HAG barvanje kot alternativa klasifikaciji/RGB
+- Dinamična sončna luč iz HA senzorjev
+- Časovni slider za animacijo senc
+- HACS priprava za testno verzijo

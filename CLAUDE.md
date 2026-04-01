@@ -47,7 +47,7 @@ ha_clss_shade/
 - Horizon profile: Open-Meteo elevation API (Copernicus 30m DEM), 5km radius, 72 azimuths
 - Reads weather data from slovenian_weather_integration via HA state machine
 
-## Current Capabilities (as of Seja 6, 2026-03-28)
+## Current Capabilities (as of Seja 7, 2026-04-01)
 
 ### Shadow & Shade Analysis
 - Ray-marching shadow computation over LiDAR DSM grid
@@ -173,6 +173,8 @@ Esri World Imagery  # Satellite tiles (REST export)
 - INCA si0zm covers only SE Slovenia — Open-Meteo used as fallback
 - ~~3D viewer: satellite texture quality limited by Esri export resolution~~ — POF ortophoto (16cm) available
 - POF ortophoto requires manual download from CLSS viewer (Flycom CDN locked)
+- ~~Weather bridge matched _opis entities instead of numeric sensors~~ — FIXED: endswith() suffix matching
+- ~~HA startup blocked 5+ min by first refresh + shadow forecast~~ — FIXED: non-blocking refresh + background tasks
 - include_neighbors: needs ~3-4 GB RAM for 4-tile rasterization (optimized with incremental processing)
 
 ## Related Projects
