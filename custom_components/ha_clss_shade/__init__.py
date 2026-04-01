@@ -69,10 +69,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Download LiDAR data and build site model (first run may take a while)
     await coordinator.async_setup()
 
-    # First data fetch (computes initial shadow map)
-    await coordinator.async_config_entry_first_refresh()
-
-    # Store runtime data
+    # Store runtime data (before first refresh so entities can register)
     entry.runtime_data = ClssShadeRuntimeData(coordinator=coordinator)
 
     # Forward to platforms
@@ -82,6 +79,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Reload on options change
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))
+
+    # Schedule first data refresh in background (shadow computation is slow,
+    # don't block HA startup). Sensors will show "unknown" until first refresh completes.
+    await coordinator.async_request_refresh()
 
     return True
 

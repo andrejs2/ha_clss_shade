@@ -725,7 +725,7 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
                 > timedelta(minutes=DEFAULT_FORECAST_INTERVAL_MIN)
             )
             if shadow_stale and self._shadow_forecast_task is None:
-                self._shadow_forecast_task = self.hass.async_create_task(
+                self._shadow_forecast_task = self.hass.async_create_background_task(
                     self._async_refresh_shadow_forecast(),
                     f"{DOMAIN}_shadow_forecast",
                 )
@@ -880,7 +880,7 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
                 > timedelta(minutes=DEFAULT_FORECAST_INTERVAL_MIN)
             )
             if shadow_stale and self._shadow_forecast_task is None:
-                self._shadow_forecast_task = self.hass.async_create_task(
+                self._shadow_forecast_task = self.hass.async_create_background_task(
                     self._async_refresh_shadow_forecast(),
                     f"{DOMAIN}_shadow_forecast",
                 )
