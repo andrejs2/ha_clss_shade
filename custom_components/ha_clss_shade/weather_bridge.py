@@ -74,9 +74,9 @@ def find_arso_entities(hass: HomeAssistant) -> dict[str, str]:
         if "arso" not in eid:
             continue
 
-        # Weather sensors
+        # Weather sensors — match only exact suffix (exclude _opis variants)
         for key, pattern in weather_patterns.items():
-            if pattern in eid and key not in found:
+            if eid.endswith(f"_{pattern}") and key not in found:
                 found[key] = eid
 
         # Agrometeo overview sensor (has 'dnevi' attribute)
