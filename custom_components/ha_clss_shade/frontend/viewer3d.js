@@ -50,6 +50,13 @@ export class TerrainViewer {
     this.currentZoneMarkers = [];   // Three.js spheres
     this.currentZoneLines = null;   // Three.js Line
     this.completedZones = [];       // [{name, points, mesh}, ...]
+
+    // Zone editing state
+    this.editingMode = false;
+    this.editingZoneIndex = -1;
+    this._editHandles = [];         // Three.js sphere handles
+    this._editOutline = null;       // Three.js Line for edit outline
+    this._dragHandle = null;        // currently dragged handle
   }
 
   init() {
@@ -117,6 +124,11 @@ export class TerrainViewer {
 
     // Click handler for raycasting
     this.renderer.domElement.addEventListener('click', (e) => this._onClick(e));
+
+    // Drag handlers for edit mode
+    this.renderer.domElement.addEventListener('pointerdown', (e) => this._onPointerDown(e));
+    this.renderer.domElement.addEventListener('pointermove', (e) => this._onPointerMove(e));
+    this.renderer.domElement.addEventListener('pointerup', (e) => this._onPointerUp(e));
 
     this._animate();
   }
@@ -662,6 +674,151 @@ export class TerrainViewer {
     return group;
   }
 
+  // ─── Zone Editing ───
+
+  startEditing(zoneIndex) {
+    if (zoneIndex < 0 || zoneIndex >= this.completedZones.length) return;
+    this.editingMode = true;
+    this.editingZoneIndex = zoneIndex;
+    this._showEditHandles(zoneIndex);
+    this.container.dispatchEvent(new CustomEvent('edit-start', {
+      detail: { index: zoneIndex, name: this.completedZones[zoneIndex].name }
+    }));
+  }
+
+  finishEditing() {
+    if (!this.editingMode) return;
+    const zone = this.completedZones[this.editingZoneIndex];
+    this._hideEditHandles();
+    // Rebuild zone mesh with updated points
+    if (zone.mesh) {
+      this.scene.remove(zone.mesh);
+      zone.mesh.traverse(c => { if (c.geometry) c.geometry.dispose(); if (c.material) c.material.dispose(); });
+    }
+    zone.mesh = this._createZonePolygonMesh(zone.points, zone.color || '#2196F3');
+    this.scene.add(zone.mesh);
+    this.editingMode = false;
+    const idx = this.editingZoneIndex;
+    this.editingZoneIndex = -1;
+    this.container.dispatchEvent(new CustomEvent('edit-finish', {
+      detail: { index: idx, name: zone.name, points: zone.points }
+    }));
+  }
+
+  cancelEditing() {
+    if (!this.editingMode) return;
+    this._hideEditHandles();
+    this.editingMode = false;
+    this.editingZoneIndex = -1;
+    this.container.dispatchEvent(new CustomEvent('edit-cancel'));
+  }
+
+  _showEditHandles(zoneIndex) {
+    this._hideEditHandles();
+    const zone = this.completedZones[zoneIndex];
+    for (let i = 0; i < zone.points.length; i++) {
+      const p = zone.points[i];
+      const handle = new THREE.Mesh(
+        new THREE.SphereGeometry(1.0, 16, 16),
+        new THREE.MeshBasicMaterial({ color: 0xffff00, depthTest: false })
+      );
+      handle.position.set(p.x, p.y, p.z);
+      handle.renderOrder = 999;
+      handle.userData.pointIndex = i;
+      handle.userData.isEditHandle = true;
+      this.scene.add(handle);
+      this._editHandles.push(handle);
+    }
+    // Dim the zone mesh while editing
+    if (zone.mesh) zone.mesh.visible = false;
+    // Show edit outline
+    this._updateEditOutline(zone.points);
+  }
+
+  _hideEditHandles() {
+    for (const h of this._editHandles) {
+      this.scene.remove(h);
+      h.geometry.dispose();
+      h.material.dispose();
+    }
+    this._editHandles = [];
+    if (this._editOutline) {
+      this.scene.remove(this._editOutline);
+      this._editOutline.geometry.dispose();
+      this._editOutline = null;
+    }
+    // Restore zone mesh visibility
+    if (this.editingZoneIndex >= 0) {
+      const zone = this.completedZones[this.editingZoneIndex];
+      if (zone && zone.mesh) zone.mesh.visible = true;
+    }
+  }
+
+  _updateEditOutline(points) {
+    if (this._editOutline) {
+      this.scene.remove(this._editOutline);
+      this._editOutline.geometry.dispose();
+    }
+    if (points.length < 2) return;
+    const verts = points.map(p => new THREE.Vector3(p.x, p.y, p.z));
+    verts.push(verts[0].clone());
+    const geo = new THREE.BufferGeometry().setFromPoints(verts);
+    const mat = new THREE.LineBasicMaterial({ color: 0xffff00, linewidth: 2, depthTest: false });
+    this._editOutline = new THREE.Line(geo, mat);
+    this._editOutline.renderOrder = 998;
+    this.scene.add(this._editOutline);
+  }
+
+  _onPointerDown(event) {
+    if (!this.editingMode) return;
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    this.raycaster.setFromCamera(this.mouse, this.camera);
+
+    const hits = this.raycaster.intersectObjects(this._editHandles);
+    if (hits.length > 0) {
+      this._dragHandle = hits[0].object;
+      this.controls.enabled = false; // disable orbit while dragging
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  }
+
+  _onPointerMove(event) {
+    if (!this._dragHandle) return;
+    // Raycast against terrain to find new position
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    this.raycaster.setFromCamera(this.mouse, this.camera);
+
+    if (!this.terrainGroup) return;
+    const meshes = [];
+    this.terrainGroup.traverse(c => { if (c.isMesh) meshes.push(c); });
+    const hits = this.raycaster.intersectObjects(meshes);
+    if (hits.length > 0) {
+      const newPos = hits[0].point;
+      this._dragHandle.position.copy(newPos);
+      // Update zone point data
+      const idx = this._dragHandle.userData.pointIndex;
+      const zone = this.completedZones[this.editingZoneIndex];
+      zone.points[idx] = { x: newPos.x, y: newPos.y, z: newPos.z };
+      this._updateEditOutline(zone.points);
+    }
+    event.preventDefault();
+  }
+
+  _onPointerUp(event) {
+    if (this._dragHandle) {
+      this._dragHandle = null;
+      this.controls.enabled = true;
+      this.container.dispatchEvent(new CustomEvent('edit-point-moved', {
+        detail: { index: this.editingZoneIndex }
+      }));
+    }
+  }
+
   // ─── Raycasting ───
 
   _raycastTerrain(event) {
@@ -683,6 +840,8 @@ export class TerrainViewer {
   }
 
   _onClick(event) {
+    if (this.editingMode) return; // handled by pointer events
+
     const hit = this._raycastTerrain(event);
     if (!hit) return;
 

@@ -905,44 +905,17 @@
     }
   }
 
-  btnFinish3d.addEventListener('click', async () => {
-    if (!viewer) return;
-    const name = prompt('Ime 3D cone:', 'nova_cona_3d');
-    if (!name) { viewer.cancelDrawing(); }
-    else {
-      const color = '#' + Math.floor(Math.random()*0xFFFFFF).toString(16).padStart(6,'0');
-      viewer.finishDrawing(name, color);
-
-      // Save all 3D zones to HA
-      try {
-        const zonesToSave = viewer.completedZones.map(z => ({
-          name: z.name, color: z.color, points: z.points, zone_type: 'custom',
-        }));
-        await callWS3d('ha_clss_shade/save_3d_zones', { zones: zonesToSave });
-        drawStatus.textContent = `Cona "${name}" shranjena!`;
-        update3dZoneList();
-      } catch(e) {
-        drawStatus.textContent = 'Napaka pri shranjevanju: ' + e.message;
-        console.error('Save 3D zones error:', e);
-      }
-    }
-    btnDraw3d.style.display = 'inline-block';
-    btnFinish3d.style.display = 'none';
-    btnCancel3d.style.display = 'none';
-    _restorePointCloudAfterDraw();
-  });
-
-  btnCancel3d.addEventListener('click', () => {
-    if (viewer) viewer.cancelDrawing();
-    btnDraw3d.style.display = 'inline-block';
-    btnFinish3d.style.display = 'none';
-    btnCancel3d.style.display = 'none';
-    drawStatus.style.display = 'none';
-    _restorePointCloudAfterDraw();
-  });
-
   const zoneList3d = document.getElementById('zone-list-3d');
   const zoneList3dItems = document.getElementById('zone-list-3d-items');
+
+  async function _save3dZones() {
+    try {
+      const zonesToSave = viewer.completedZones.map(z => ({
+        name: z.name, color: z.color, points: z.points, zone_type: 'custom',
+      }));
+      await callWS3d('ha_clss_shade/save_3d_zones', { zones: zonesToSave });
+    } catch(err) { console.error('Save 3D zones error:', err); }
+  }
 
   function update3dZoneList() {
     if (!viewer) return;
@@ -960,8 +933,14 @@
         <span class="color-dot" style="background:${z.color || '#2196F3'}"></span>
         <span class="name">${z.name}</span>
         <span class="type">3D (${z.points.length})</span>
-        <button class="delete-btn" data-idx="${i}" title="Izbriši">✕</button>
+        <button class="edit-btn" data-idx="${i}" title="Uredi" style="background:none;border:none;color:#4ade80;cursor:pointer;font-size:14px;padding:2px 4px">&#9998;</button>
+        <button class="delete-btn" data-idx="${i}" title="Izbriši">&#10005;</button>
       `;
+      div.querySelector('.edit-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        const idx = parseInt(e.target.dataset.idx);
+        _startZoneEdit(idx);
+      });
       div.querySelector('.delete-btn').addEventListener('click', async (e) => {
         e.stopPropagation();
         const idx = parseInt(e.target.dataset.idx);
@@ -969,17 +948,84 @@
         if (zone.mesh) { viewer.scene.remove(zone.mesh); }
         viewer.completedZones.splice(idx, 1);
         update3dZoneList();
-        // Save updated list
-        try {
-          const zonesToSave = viewer.completedZones.map(z => ({
-            name: z.name, color: z.color, points: z.points, zone_type: 'custom',
-          }));
-          await callWS3d('ha_clss_shade/save_3d_zones', { zones: zonesToSave });
-        } catch(err) { console.error('Delete save error:', err); }
+        await _save3dZones();
       });
       zoneList3dItems.appendChild(div);
     }
   }
+
+  function _startZoneEdit(idx) {
+    if (!viewer || viewer.drawingMode) return;
+    // Hide point cloud for raycasting
+    if (pointCloudLoaded && pcVisible.checked) {
+      _pcWasVisibleBeforeDraw = true;
+      pcVisible.checked = false;
+      viewer.togglePointCloud(false);
+      document.querySelectorAll('input[data-layer]').forEach(cb => {
+        cb.checked = true;
+        viewer.toggleLayer(cb.dataset.layer, true);
+      });
+    }
+    viewer.startEditing(idx);
+    const zone = viewer.completedZones[idx];
+    btnDraw3d.style.display = 'none';
+    drawStatus.style.display = 'inline';
+    drawStatus.textContent = `Urejanje "${zone.name}" — vleci rumene točke, [Shrani] za potrditev`;
+    btnFinish3d.textContent = 'Shrani';
+    btnFinish3d.style.display = 'inline-block';
+    btnCancel3d.style.display = 'inline-block';
+  }
+
+  // Finish/cancel handle both draw and edit modes
+  btnFinish3d.addEventListener('click', async () => {
+    if (!viewer) return;
+    if (viewer.editingMode) {
+      viewer.finishEditing();
+      await _save3dZones();
+      drawStatus.textContent = 'Cona shranjena!';
+      setTimeout(() => { drawStatus.style.display = 'none'; }, 2000);
+      update3dZoneList();
+      btnDraw3d.style.display = 'inline-block';
+      btnFinish3d.style.display = 'none';
+      btnFinish3d.textContent = 'Zaključi';
+      btnCancel3d.style.display = 'none';
+      _restorePointCloudAfterDraw();
+      return;
+    }
+    // Draw finish logic
+    const name = prompt('Ime 3D cone:', 'nova_cona_3d');
+    if (!name) { viewer.cancelDrawing(); }
+    else {
+      const color = '#' + Math.floor(Math.random()*0xFFFFFF).toString(16).padStart(6,'0');
+      viewer.finishDrawing(name, color);
+      try {
+        await _save3dZones();
+        drawStatus.textContent = `Cona "${name}" shranjena!`;
+        update3dZoneList();
+      } catch(e) {
+        drawStatus.textContent = 'Napaka pri shranjevanju: ' + e.message;
+      }
+    }
+    btnDraw3d.style.display = 'inline-block';
+    btnFinish3d.style.display = 'none';
+    btnCancel3d.style.display = 'none';
+    _restorePointCloudAfterDraw();
+  });
+
+  btnCancel3d.addEventListener('click', () => {
+    if (!viewer) return;
+    if (viewer.editingMode) {
+      viewer.cancelEditing();
+    } else {
+      viewer.cancelDrawing();
+    }
+    btnDraw3d.style.display = 'inline-block';
+    btnFinish3d.style.display = 'none';
+    btnFinish3d.textContent = 'Zaključi';
+    btnCancel3d.style.display = 'none';
+    drawStatus.style.display = 'none';
+    _restorePointCloudAfterDraw();
+  });
 
   // ─── Point Cloud Controls ───
   const btnPC = document.getElementById('btn-pointcloud');
