@@ -866,14 +866,44 @@
   const btnCancel3d = document.getElementById('btn-cancel3d');
   const drawStatus = document.getElementById('draw3d-status');
 
+  let _pcWasVisibleBeforeDraw = false;
+
   btnDraw3d.addEventListener('click', () => {
     if (!viewer) return;
+
+    // Hide point cloud and show mesh layers for raycasting
+    if (pointCloudLoaded && pcVisible.checked) {
+      _pcWasVisibleBeforeDraw = true;
+      pcVisible.checked = false;
+      viewer.togglePointCloud(false);
+      document.querySelectorAll('input[data-layer]').forEach(cb => {
+        cb.checked = true;
+        viewer.toggleLayer(cb.dataset.layer, true);
+      });
+    } else {
+      _pcWasVisibleBeforeDraw = false;
+    }
+
     viewer.startDrawing();
     btnDraw3d.style.display = 'none';
     btnCancel3d.style.display = 'inline-block';
     drawStatus.style.display = 'inline';
     drawStatus.textContent = 'Klikni na teren za prvo točko...';
   });
+
+  function _restorePointCloudAfterDraw() {
+    if (_pcWasVisibleBeforeDraw && pointCloudLoaded) {
+      pcVisible.checked = true;
+      viewer.togglePointCloud(true);
+      document.querySelectorAll('input[data-layer]').forEach(cb => {
+        if (cb.dataset.layer !== 'ground') {
+          cb.checked = false;
+          viewer.toggleLayer(cb.dataset.layer, false);
+        }
+      });
+      _pcWasVisibleBeforeDraw = false;
+    }
+  }
 
   btnFinish3d.addEventListener('click', async () => {
     if (!viewer) return;
@@ -899,6 +929,7 @@
     btnDraw3d.style.display = 'inline-block';
     btnFinish3d.style.display = 'none';
     btnCancel3d.style.display = 'none';
+    _restorePointCloudAfterDraw();
   });
 
   btnCancel3d.addEventListener('click', () => {
@@ -907,6 +938,7 @@
     btnFinish3d.style.display = 'none';
     btnCancel3d.style.display = 'none';
     drawStatus.style.display = 'none';
+    _restorePointCloudAfterDraw();
   });
 
   const zoneList3d = document.getElementById('zone-list-3d');

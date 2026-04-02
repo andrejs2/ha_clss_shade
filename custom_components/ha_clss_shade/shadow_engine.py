@@ -337,6 +337,59 @@ def is_point_in_sun_3d(
     return light
 
 
+def _densify_3d_polygon(points_3d: list[dict], max_edge_subdivisions: int = 3) -> list[dict]:
+    """Generate dense sample points within a 3D polygon.
+
+    Adds edge midpoints and interior points (centroid + lerp from centroid
+    to each vertex/midpoint) for better shade sampling.
+
+    Args:
+        points_3d: Vertex points [{x,y,z}, ...].
+        max_edge_subdivisions: How many segments to split each edge into.
+
+    Returns:
+        Densified list of sample points.
+    """
+    if len(points_3d) < 3:
+        return list(points_3d)
+
+    samples = list(points_3d)  # start with vertices
+
+    # Edge subdivision points
+    edge_points = []
+    n = len(points_3d)
+    for i in range(n):
+        a = points_3d[i]
+        b = points_3d[(i + 1) % n]
+        for k in range(1, max_edge_subdivisions):
+            t = k / max_edge_subdivisions
+            edge_points.append({
+                "x": a["x"] + (b["x"] - a["x"]) * t,
+                "y": a["y"] + (b["y"] - a["y"]) * t,
+                "z": a["z"] + (b["z"] - a["z"]) * t,
+            })
+    samples.extend(edge_points)
+
+    # Centroid
+    cx = sum(p["x"] for p in points_3d) / n
+    cy = sum(p["y"] for p in points_3d) / n
+    cz = sum(p["z"] for p in points_3d) / n
+    centroid = {"x": cx, "y": cy, "z": cz}
+    samples.append(centroid)
+
+    # Interior points: lerp from centroid toward each vertex and edge point
+    all_boundary = list(points_3d) + edge_points
+    for p in all_boundary:
+        for t in (0.33, 0.66):
+            samples.append({
+                "x": cx + (p["x"] - cx) * t,
+                "y": cy + (p["y"] - cy) * t,
+                "z": cz + (p["z"] - cz) * t,
+            })
+
+    return samples
+
+
 def compute_3d_zone_sun_percent(
     site: SiteModel,
     sun: SunPosition,
@@ -346,8 +399,8 @@ def compute_3d_zone_sun_percent(
 ) -> float:
     """Compute sun percentage for a 3D zone defined by arbitrary points.
 
-    Converts viewer coordinates to grid coordinates and ray-traces
-    each point.
+    Densifies the polygon vertices into many sample points across the
+    zone surface, then ray-traces each to get a smooth sun percentage.
 
     Args:
         site: Rasterized site model.
@@ -362,13 +415,16 @@ def compute_3d_zone_sun_percent(
     if not points_3d or not sun.is_above_horizon:
         return 0.0
 
+    # Densify: generate many sample points from polygon vertices
+    sample_points = _densify_3d_polygon(points_3d)
+
     # Coordinate conversion: viewer → grid
     half_w = site.cols * site.resolution / 2
     half_h = site.rows * site.resolution / 2
     base_h = float(np.nanmin(site.dtm))
 
     sun_values = []
-    for pt in points_3d:
+    for pt in sample_points:
         col = (pt["x"] + half_w) / site.resolution
         row = (half_h - pt["z"]) / site.resolution
         height = pt["y"] + base_h
