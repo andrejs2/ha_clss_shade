@@ -82,7 +82,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Schedule first data refresh in background (shadow computation is slow,
     # don't block HA startup). Sensors will show "unknown" until first refresh completes.
-    await coordinator.async_request_refresh()
+    hass.async_create_background_task(
+        coordinator.async_refresh(),
+        f"{DOMAIN}_first_refresh",
+    )
 
     return True
 

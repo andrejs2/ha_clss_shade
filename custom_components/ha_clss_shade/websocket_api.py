@@ -311,18 +311,21 @@ async def ws_get_pointcloud(
         connection.send_error(msg["id"], "no_data", "Site model not loaded")
         return
 
-    # Find cached LAZ files
+    # Find cached LAZ files (in executor to avoid blocking event loop)
     laz_dir = coordinator._data_dir / "laz"
-    laz_paths = sorted(laz_dir.glob("TM_*.laz")) if laz_dir.exists() else []
+
+    def _find_files():
+        laz = sorted(laz_dir.glob("TM_*.laz")) if laz_dir.exists() else []
+        pof = []
+        for search_dir in [coordinator._data_dir, coordinator._data_dir / "laz", coordinator._data_dir / "pof"]:
+            if search_dir.exists():
+                pof.extend(sorted(search_dir.glob("POF_*.tif")))
+        return laz, pof
+
+    laz_paths, pof_paths = await hass.async_add_executor_job(_find_files)
     if not laz_paths:
         connection.send_error(msg["id"], "no_laz", "No cached LAZ files found")
         return
-
-    # Find POF ortophoto TIF files for RGB coloring
-    # Look in data_dir, data_dir/laz, and data_dir/pof
-    pof_paths = []
-    for search_dir in [coordinator._data_dir, coordinator._data_dir / "laz", coordinator._data_dir / "pof"]:
-        pof_paths.extend(sorted(search_dir.glob("POF_*.tif")))
     if pof_paths:
         _LOGGER.info("Found POF ortophoto(s): %s", [p.name for p in pof_paths])
     else:
