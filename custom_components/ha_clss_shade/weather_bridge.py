@@ -93,7 +93,7 @@ def find_arso_entities(hass: HomeAssistant) -> dict[str, str]:
             found["water_balance"] = eid
 
     if found:
-        _LOGGER.info("Found %d ARSO weather entities", len(found))
+        _LOGGER.info("Found %d ARSO weather entities: %s", len(found), found)
     else:
         _LOGGER.info("No ARSO weather entities found — weather bridge disabled")
 

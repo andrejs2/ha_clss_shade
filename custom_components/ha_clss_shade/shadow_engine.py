@@ -322,8 +322,17 @@ def is_point_in_sun_3d(
     dy = math.cos(az_rad)
     dz = math.tan(elev_rad) * site.resolution
 
+    # Limit steps based on height range (shadows can't extend further than
+    # the tallest obstacle can cast at the current sun elevation)
     light = 1.0
-    max_steps = int(math.ceil(math.sqrt(rows**2 + cols**2)))
+    if dz > 0:
+        height_range = float(np.nanmax(site.dsm) - height_m)
+        max_steps = min(
+            int(math.ceil(math.sqrt(rows**2 + cols**2))),
+            max(int(math.ceil(height_range / dz)) + 2, 50),
+        )
+    else:
+        max_steps = 50
 
     for step in range(1, max_steps + 1):
         sc = int(round(grid_col + dx * step))
@@ -343,7 +352,7 @@ def is_point_in_sun_3d(
     return light
 
 
-def _densify_3d_polygon(points_3d: list[dict], max_edge_subdivisions: int = 3) -> list[dict]:
+def _densify_3d_polygon(points_3d: list[dict], max_edge_subdivisions: int = 2) -> list[dict]:
     """Generate dense sample points within a 3D polygon.
 
     Adds edge midpoints and interior points (centroid + lerp from centroid
