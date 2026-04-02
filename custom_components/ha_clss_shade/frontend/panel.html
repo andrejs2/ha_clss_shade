@@ -589,12 +589,18 @@
         '<span class="color-dot" style="background:' + color + '"></span>' +
         '<span class="name">' + zoneName + '</span>' +
         '<span class="type">' + zone.zone_type + ' (' + vCount + ')</span>' +
+        '<button class="edit-btn" title="Uredi" style="background:none;border:none;color:#4ade80;cursor:pointer;font-size:14px;padding:2px 4px">&#9998;</button>' +
         '<button class="delete-btn" title="Odstrani">&times;</button>';
 
       // Click to zoom
       div.addEventListener('click', function(e) {
-        if (e.target.classList.contains('delete-btn')) return;
+        if (e.target.classList.contains('delete-btn') || e.target.classList.contains('edit-btn')) return;
         zoomToZone(zoneName);
+      });
+
+      // Edit button — zoom + activate Leaflet.Draw edit mode
+      div.querySelector('.edit-btn').addEventListener('click', function() {
+        editZone(zoneName);
       });
 
       // Delete button
@@ -613,6 +619,56 @@
     if (!zone.vertices || zone.vertices.length < 3) return;
     var bounds = L.latLngBounds(zone.vertices.map(function(v) { return L.latLng(v[0], v[1]); }));
     map.fitBounds(bounds, { padding: [50, 50] });
+  }
+
+  function editZone(name) {
+    // Zoom to zone
+    zoomToZone(name);
+    // Find the layer for this zone
+    var targetLayer = null;
+    drawnItems.eachLayer(function(layer) {
+      if (layer._clssZoneName === name) targetLayer = layer;
+    });
+    if (!targetLayer) return;
+    // Enable editing on this layer
+    if (targetLayer.editing) {
+      targetLayer.editing.enable();
+      // Flash the layer to indicate edit mode
+      var origColor = targetLayer.options.color;
+      targetLayer.setStyle({ color: '#ffff00', weight: 3 });
+      // Status message
+      var statusDiv = document.createElement('div');
+      statusDiv.id = 'edit-zone-status';
+      statusDiv.style.cssText = 'position:fixed;top:60px;left:50%;transform:translateX(-50%);background:#2a2a3e;color:#4ade80;padding:8px 16px;border-radius:6px;z-index:9999;font-size:13px;border:1px solid #4ade80';
+      statusDiv.innerHTML = 'Urejanje "' + name + '" — premikaj točke, nato <button id="edit-zone-save" style="background:#4ade80;color:#000;border:none;padding:3px 10px;border-radius:4px;cursor:pointer;margin:0 4px">Shrani</button><button id="edit-zone-cancel" style="background:#666;color:#fff;border:none;padding:3px 10px;border-radius:4px;cursor:pointer">Prekliči</button>';
+      document.body.appendChild(statusDiv);
+
+      document.getElementById('edit-zone-save').addEventListener('click', function() {
+        targetLayer.editing.disable();
+        targetLayer.setStyle({ color: origColor, weight: 2 });
+        // Update zone data with new coordinates
+        var idx = findZoneByName(name);
+        if (idx >= 0) {
+          var coords = targetLayer.getLatLngs()[0].map(function(ll) { return [ll.lat, ll.lng]; });
+          customZones[idx].vertices = coords;
+        }
+        statusDiv.remove();
+        markDirty();
+        refreshZoneList();
+      });
+
+      document.getElementById('edit-zone-cancel').addEventListener('click', function() {
+        targetLayer.editing.disable();
+        targetLayer.setStyle({ color: origColor, weight: 2 });
+        // Revert: reload the layer from saved data
+        var idx = findZoneByName(name);
+        if (idx >= 0 && customZones[idx].vertices) {
+          var latlngs = customZones[idx].vertices.map(function(v) { return L.latLng(v[0], v[1]); });
+          targetLayer.setLatLngs(latlngs);
+        }
+        statusDiv.remove();
+      });
+    }
   }
 
   function deleteZone(name) {
