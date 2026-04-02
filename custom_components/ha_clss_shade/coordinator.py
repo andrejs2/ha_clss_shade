@@ -499,46 +499,45 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
         existing_cache = dict(self._shadow_forecast_cache)
         existing_timestamps = dict(self._shadow_forecast_day_computed)
 
-        def _compute() -> dict[str, list[ShadowForecastStep]]:
-            result: dict[str, list[ShadowForecastStep]] = {}
-            for day_offset in range(FORECAST_DAYS):
-                target = today + timedelta(days=day_offset)
-                key = target.isoformat()
-                step = FORECAST_STEP_MINUTES if day_offset < 2 else FORECAST_STEP_MINUTES_FAR
+        # Incremental: compute one day at a time, update cache after each
+        valid_keys = {(today + timedelta(days=i)).isoformat() for i in range(FORECAST_DAYS)}
+        step_counts = []
 
-                # Reuse cached far-day data if recent enough
-                if day_offset >= 2 and key in existing_cache:
-                    cached_at = existing_timestamps.get(key)
-                    if cached_at and (now - cached_at).total_seconds() < FORECAST_FAR_CACHE_HOURS * 3600:
-                        result[key] = existing_cache[key]
-                        continue
+        for day_offset in range(FORECAST_DAYS):
+            target = today + timedelta(days=day_offset)
+            key = target.isoformat()
+            step = FORECAST_STEP_MINUTES if day_offset < 2 else FORECAST_STEP_MINUTES_FAR
 
-                result[key] = compute_shadow_forecast(
+            # Reuse cached far-day data if recent enough
+            if day_offset >= 2 and key in existing_cache:
+                cached_at = existing_timestamps.get(key)
+                if cached_at and (now - cached_at).total_seconds() < FORECAST_FAR_CACHE_HOURS * 3600:
+                    step_counts.append(len(existing_cache[key]))
+                    continue
+
+            try:
+                day_result = await self.hass.async_add_executor_job(
+                    compute_shadow_forecast,
                     site, zones, lat, lon, target, step, horizon,
                 )
-            return result
+                # Update cache immediately after each day
+                self._shadow_forecast_cache[key] = day_result
+                self._shadow_forecast_day_computed[key] = now
+                step_counts.append(len(day_result))
+            except Exception:
+                _LOGGER.exception("Shadow forecast day %s failed", key)
+                step_counts.append(0)
 
-        try:
-            result = await self.hass.async_add_executor_job(_compute)
+        # Clean up old days from cache
+        self._shadow_forecast_cache = {
+            k: v for k, v in self._shadow_forecast_cache.items() if k in valid_keys
+        }
+        self._shadow_forecast_day_computed = {
+            k: v for k, v in self._shadow_forecast_day_computed.items() if k in valid_keys
+        }
+        self._shadow_forecast_computed_at = datetime.now(tz=timezone.utc)
 
-            # Clean up old days from cache
-            valid_keys = {(today + timedelta(days=i)).isoformat() for i in range(FORECAST_DAYS)}
-            self._shadow_forecast_cache = {k: v for k, v in result.items() if k in valid_keys}
-            self._shadow_forecast_computed_at = datetime.now(tz=timezone.utc)
-
-            # Track per-day computation timestamps
-            for key in result:
-                if key not in existing_timestamps or key not in existing_cache:
-                    self._shadow_forecast_day_computed[key] = now
-            # Clean old timestamps
-            self._shadow_forecast_day_computed = {
-                k: v for k, v in self._shadow_forecast_day_computed.items() if k in valid_keys
-            }
-
-            step_counts = [len(result.get((today + timedelta(days=i)).isoformat(), [])) for i in range(FORECAST_DAYS)]
-            _LOGGER.info("Shadow forecast computed: %s time steps", "+".join(str(n) for n in step_counts))
-        except Exception:
-            _LOGGER.exception("Shadow forecast computation failed")
+        _LOGGER.info("Shadow forecast computed: %s time steps", "+".join(str(n) for n in step_counts))
 
     async def _async_refresh_openmeteo_forecast(self) -> None:
         """Fetch hourly GHI forecast from Open-Meteo (free, global)."""
@@ -916,19 +915,28 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
             # Assemble forecast from cached data
             forecast = self._assemble_forecast(now)
 
-            # Compute 3D zone sun percentages
+            # Compute 3D zone sun percentages (CPU-bound, run in executor)
             zones_3d_data = {}
             zones_3d_config = self.config_entry.options.get("zones_3d", [])
             if zones_3d_config and self._site:
-                for z3d in zones_3d_config:
-                    name = z3d.get("name", "")
-                    points = z3d.get("points", [])
-                    if name and points:
-                        sun_pct = compute_3d_zone_sun_percent(
-                            self._site, sun, points,
-                            horizon=self._horizon,
-                        )
-                        zones_3d_data[name] = sun_pct
+                site_ref = self._site
+                horizon_ref = self._horizon
+
+                def _compute_3d_zones():
+                    result = {}
+                    for z3d in zones_3d_config:
+                        name = z3d.get("name", "")
+                        points = z3d.get("points", [])
+                        if name and points:
+                            result[name] = compute_3d_zone_sun_percent(
+                                site_ref, sun, points,
+                                horizon=horizon_ref,
+                            )
+                    return result
+
+                zones_3d_data = await self.hass.async_add_executor_job(
+                    _compute_3d_zones
+                )
 
             return ClssShadeData(
                 shadow=result,

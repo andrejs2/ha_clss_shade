@@ -287,11 +287,16 @@ def is_point_in_sun_3d(
     height_m: float,
     current_date: date | None = None,
     horizon: HorizonProfile | None = None,
+    transmittance_grid: np.ndarray | None = None,
 ) -> float:
     """Check if an arbitrary 3D point receives sunlight.
 
     Traces a ray from (grid_row, grid_col, height_m) toward the sun,
     checking for DSM obstacles along the way.
+
+    Args:
+        transmittance_grid: Pre-built transmittance grid (optional).
+            Pass this when calling in a loop to avoid rebuilding each time.
 
     Returns:
         Light fraction 0.0 (full shade) to 1.0 (full sun).
@@ -306,9 +311,10 @@ def is_point_in_sun_3d(
         current_date = date.today()
 
     rows, cols = site.dsm.shape
-    transmittance_grid = _build_transmittance_grid(
-        site.classification, current_date.month
-    )
+    if transmittance_grid is None:
+        transmittance_grid = _build_transmittance_grid(
+            site.classification, current_date.month
+        )
 
     az_rad = math.radians(sun.azimuth)
     elev_rad = math.radians(sun.elevation)
@@ -415,8 +421,14 @@ def compute_3d_zone_sun_percent(
     if not points_3d or not sun.is_above_horizon:
         return 0.0
 
+    if current_date is None:
+        current_date = date.today()
+
     # Densify: generate many sample points from polygon vertices
     sample_points = _densify_3d_polygon(points_3d)
+
+    # Build transmittance grid ONCE for all points
+    trans_grid = _build_transmittance_grid(site.classification, current_date.month)
 
     # Coordinate conversion: viewer → grid
     half_w = site.cols * site.resolution / 2
@@ -433,7 +445,10 @@ def compute_3d_zone_sun_percent(
         col = max(0, min(col, site.cols - 1))
         row = max(0, min(row, site.rows - 1))
 
-        light = is_point_in_sun_3d(site, sun, row, col, height, current_date, horizon)
+        light = is_point_in_sun_3d(
+            site, sun, row, col, height, current_date, horizon,
+            transmittance_grid=trans_grid,
+        )
         sun_values.append(light)
 
     return round(sum(sun_values) / len(sun_values) * 100, 1)
