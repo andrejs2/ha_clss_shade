@@ -15,52 +15,116 @@
 
 [<img src="https://em-content.zobj.net/thumbs/240/microsoft/319/rocket_1f680.png" alt="Install" width="30"/> ![Install via HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=andrejs2&repository=ha_clss_shade&category=integration)
 
-# CLSS Shade — Analiza senčenja na podlagi LiDAR podatkov za Home Assistant
+# CLSS Shade — Analiza sencenja na podlagi LiDAR podatkov za Home Assistant
 
-## Pregled
+> **EKSPERIMENTALNO / BETA (v0.0.1)**
+>
+> Ta integracija je v **zgodnji fazi razvoja**. Deluje, vendar pricakujte:
+> - Obcasne napake in spremembe v konfiguraciji med posodobitvami
+> - Nepopolno dokumentacijo za nekatere napredne funkcije
+> - Moznost, da se API ali senzorji spremenijo brez predhodnega opozorila
+>
+> Povratne informacije in porocila o napakah so zelo dobrodosli — odprite [issue](https://github.com/andrejs2/ha_clss_shade/issues).
 
-**CLSS Shade** je Home Assistant integracija, ki uporablja podatke **Cikličnega laserskega skeniranja Slovenije (CLSS)** za natančno analizo senčenja vašega doma in okolice. Na podlagi visoko-resolucijskega 3D oblaka točk (10 tock/m², resolucija 0.5 m) integracija izračuna, kateri deli vašega doma, vrta in strehe so v danem trenutku na soncu in kateri v senci.
+---
 
-V kombinaciji z vremenskimi podatki iz integracije [ARSO Weather (slovenian_weather_integration)](https://github.com/andrejs2/slovenian_weather_integration) ponuja:
+## Kaj je to?
 
-- **Natančno analizo senčenja** na podlagi dejanskega 3D modela okolice (stavbe, drevesa, teren)
-- **Oceno PV proizvodnje** — koliko električne energije vaš sončni sistem dejansko proizvaja glede na senčenje strehe in izmerjeno sončno sevanje
-- **Pametno zalivanje** — koliko vode potrebuje posamezna cona vrta glede na osončenje, evapotranspiracijo in napoved padavin
-- **Avtomatizacijo senčil in rolet** — katera okna so osončena in kdaj bo sonce vzšlo ali zašlo
+**CLSS Shade** je Home Assistant integracija, ki na podlagi **pravih 3D podatkov** vase okolice izracuna, kateri deli vasega doma, vrta in strehe so na soncu in kateri v senci — v realnem casu, vsake 5 minut.
+
+Namesto poenostavljenih modelov ali rocnega nastavljanja kotov, integracija uporabi **dejanski 3D model terena, stavb in dreves**, ki ga pridobi iz javno dostopnih LiDAR podatkov. Rezultat je natancna analiza sencenja, ki uposteva vse okoliske objekte: sosednje stavbe, drevesa, teren, napusce, ograje...
+
+### Primeri uporabe
+
+- **Avtomatizacija rolet/zaluzij** — samodejno zapri, ko sonce osvetli okno; odpri, ko je v senci
+- **PV napoved** — koliko elektrike bodo vasi soncni paneli danes/jutri/ta teden dejansko proizvedli, z upostevanjem sencenja
+- **Pametno zalivanje** — koliko vode posamezna cona vrta potrebuje glede na osoncenje, evapotranspiracijo in napoved padavin
+- **3D vizualizacija** — ogled vase okolice v 3D neposredno v Home Assistant brskalniku
+
+---
+
+## Samo za Slovenijo
+
+Ta integracija je **prilagojena za Slovenijo** in zaenkrat deluje **samo na obmocju Republike Slovenije**.
+
+Razlog: podatkovni vir so **LiDAR podatki** iz projekta **CLSS (Ciklicno Lasersko Skeniranje Slovenije)**, ki ga izvaja Geodetska uprava RS (GURS). Gre za sistematicno lasersko skeniranje celotne drzave iz letala — vsak kvadratni meter Slovenije je poskeniran z gostoto **10 tock/m2**, kar pomeni, da integracija pozna vsako stavbo, drevo in teren v vasi okolici na priblizno 10 cm natancno.
+
+Ti podatki so **javno dostopni in brezplacni** (licenca CC 4.0, obvezna atribucija), ampak obstajajo samo za Slovenijo. Ce zivite zunaj Slovenije, ta integracija zaenkrat ne bo delovala.
+
+> **Tehnicno:** Podatki so v formatu LAZ 1.4, koordinatni sistem EPSG:3794 (D96/TM), z 21 ASPRS klasifikacijskimi razredi (tla, stavbe, vegetacija, voda, mostovi...). Posamezna ploscica pokriva 1x1 km in je velika ~30-50 MB.
+
+---
+
+## Zahteve in opozorila
+
+### Prenos podatkov in obremenitev streznika
+
+Ob prvi nastavitvi integracija **prenese LiDAR ploscico** s streznika ARSO (gis.arso.gov.si):
+
+| Parameter | Vrednost |
+|-----------|---------|
+| Velikost prenosa | ~30-50 MB (ena ploscica 1x1 km) |
+| Cas prenosa | 30-90 sekund |
+| Streznik | gis.arso.gov.si (ARSO, javni) |
+| Frekvenca | **Enkratno** — podatki se kesirajo lokalno |
+
+**Pomembno:**
+- Prenos se zgodi **samo enkrat** ob namestitvi (ali ob spremembi lokacije/radija). Integracija podatkov **ne prenaša veckrat**.
+- Ce izberete vecji radij (500-1000 m) ali vklopite "sosednje ploscice", se prenese vec podatkov (do 9 ploscic, ~300+ MB). Priporocamo zaceti z **radijem 200 m** in po potrebi povecati.
+- Ne obremenjujte streznika z nepotrebnimi ponovnimi namestitvami.
+
+### Sistemske zahteve
+
+| Zahteva | Priporocilo |
+|---------|-------------|
+| **RAM** | ~50 MB za radij 200 m; ~200 MB za 500 m; **3-4 GB za 9 ploscic** (sosednje ploscice) |
+| **Disk** | ~50-300 MB za kesirane podatke |
+| **CPU** | Izracun sencenja traja 1-2 s vsakih 5 min (zanemarljivo) |
+| **Home Assistant** | 2024.4.0 ali novejsi |
+
+### Odvisnosti
+
+| Paket | Uporaba |
+|-------|---------|
+| `numpy` | Numericne operacije, shadow engine |
+| `laspy` + `laszip` | Branje in dekompresija LAZ datotek |
+| `pyproj` | Koordinatne pretvorbe (WGS84 <-> EPSG:3794) |
+| `scipy` | Interpolacija praznih celic v gridu |
+
+Vse odvisnosti se namestijo samodejno prek HACS.
 
 ---
 
 ## Kako deluje
 
-Integracija ob prvi nastavitvi prenese LiDAR podatke iz strežnika Portala Prostor (Geodetska uprava RS) — en LiDAR tile velikosti 1×1 km (~30-50 MB), ki pokriva izbrano lokacijo. Iz oblaka točk zgradi digitalni model površja (DSM) in terena (DTM), nato pa vsakih 5 minut izvede izračun senčenja na podlagi trenutnega položaja sonca.
-
-### Princip delovanja
+### V 60 sekundah
 
 ```
 1. Prenos LiDAR podatkov (enkratno)
-   ARSO streznik → LAZ datoteka → DSM/DTM grid (800×800 celic pri 200m radiju)
+   ARSO streznik --> LAZ datoteka --> 3D grid (DSM + DTM + klasifikacija)
 
-2. Izračun senčenja (vsakih 5 minut)
-   Polozaj sonca + DSM grid → Ray-marching → Senčna mapa
+2. Izracun sencenja (vsakih 5 minut)
+   Trenutni polozaj sonca + 3D grid --> Ray-marching --> Sencna mapa
 
-3. Analiza po conah (avtomatska detekcija)
-   LiDAR klasifikacija → Streha / Vrt / Drevesa / Odprto
+3. Analiza po conah
+   LiDAR klasifikacija --> Avtomatske cone: Streha / Vrt / Drevesa / Odprto
+   + Uporabniske cone: poljubni poligoni, ki jih narisite na karti
 
-4. Kombinacija z vremenskimi podatki (opcijsko)
-   Senca mapa + ARSO sončno sevanje → PV ocena
-   Senca mapa + ARSO agrometeo → Zalivanje
+4. Napredne funkcije (opcijsko)
+   + ARSO Weather --> PV napoved, zalivanje
+   + 3D editor --> Analiza fasad, oken, nadstreskov
 ```
 
 ### Ray-marching algoritem
 
-Za vsako celico v gridu integracija "izstreli" žarek proti soncu in preveri, ali kakšen objekt (stavba, drevo) prepreči pot svetlobe. Uposteva tudi sezonske spremembe — pozimi, ko drevesa nimajo listov, prepuščajo več svetlobe (65%) kot poleti z listi (15%).
+Za vsako celico v gridu integracija "izstreli" zarek proti soncu in preveri, ali kaksen objekt (stavba, drevo) prepreci pot svetlobe. Uposteva tudi sezonske spremembe — pozimi, ko drevesa nimajo listov, prepuscajo vec svetlobe.
 
 | Razred | Opis | Prepustnost |
 |--------|------|-------------|
 | Stavbe | Strehe, fasade | 0% (popolnoma neprepustne) |
 | Visoka vegetacija (>10 m) | Drevesa | 15-65% (sezonsko) |
 | Srednja vegetacija (3-10 m) | Grmovje, mlada drevesa | 40% |
-| Nizka vegetacija (<3 m) | Trava, grmičevje | 60% |
+| Nizka vegetacija (<3 m) | Trava, grmicevje | 60% |
 | Tla | Tla, ceste | 100% (prepustna) |
 
 **Sezonski model vegetacije:**
@@ -71,241 +135,16 @@ Za vsako celico v gridu integracija "izstreli" žarek proti soncu in preveri, al
 | Delno listje | apr, maj, okt, nov | 40% | Prehodno obdobje |
 | Brez listja | dec-mar | 65% | Gola drevesa |
 
----
+### Zakaj prihaja do nenadnih sprememb (spic) v sencenju?
 
-## Podatkovni viri
+Ce opazite, da se sencenje nenadoma spremeni (npr. iz 20% na 80% v 15 minutah), to **ni napaka** — je posledica realnih razmer:
 
-### LiDAR podatki — CLSS (Ciklicno Lasersko Skeniranje Slovenije)
+- **Stavbe in drevesa mecejo ostre sence.** Ko sonce potuje po nebu, senca sosednje stavbe ali drevesa lahko v nekaj minutah "preskoce" cez vaso cono. V naravi je enako — razlika je, da integracija to izracuna na 5 minut natancno.
+- **Pozimi so sence dolge.** Pri nizkem kotu sonca (december, januar) ze manjsa stavba vrze senco 50+ m dalec. Sonce je nad obzorjem le 8-9 ur, zato so spremembe hitrejse.
+- **Sezonski prehodi.** V aprilu in oktobru se model vegetacije spremeni (drevesa dobijo/izgubijo liste), kar lahko povzroci skok v sencenju na conah blizu dreves.
+- **Napusci in strehe.** Ce imate napusc ali nadstresek, ta poleti (visoko sonce) senci okno, pozimi (nizko sonce) pa sonce pride pod njim. To je namerno in pravilno upostevan v modelu.
 
-Integracija uporablja podatke iz projekta **CLSS 2023-2025**, ki ga izvaja Flycom Technologies po naročilu Geodetske uprave RS (GURS). Gre za drugo sistematično lasersko skeniranje celotne Slovenije.
-
-| Lastnost | Vrednost |
-|----------|---------|
-| Gostota točk | 10 tock/m² |
-| Format | LAZ 1.4 |
-| Koordinatni sistem | EPSG:3794 (D96/TM) |
-| Velikost ploščice | 1×1 km |
-| Pokritost | Celotna Slovenija |
-| Klasifikacija | 21 razredov (ASPRS) |
-| Licenca | Creative Commons 4.0 (obvezna atribucija) |
-
-Podatki so na voljo na strežniku ARSO: `gis.arso.gov.si/lidar/`. Integracija avtomatsko določi pravo ploščico in jo prenese.
-
-Pregled podatkov: [CLSS pregledovalnik](https://clss.si) | [E-prostor](https://www.e-prostor.gov.si/dostopnost/) | [Navodila za pregledovalnik (PDF)](https://assets.flycom.si/clss/navodila_pregledovalnik_clss.pdf)
-
-### Vremenski podatki — ARSO (opcijsko)
-
-Če imate nameščeno integracijo [ARSO Weather](https://github.com/andrejs2/slovenian_weather_integration), CLSS Shade samodejno prebere naslednje senzorje:
-
-| Podatek | Entiteta | Uporaba |
-|---------|----------|---------|
-| Globalno sončno sevanje | `sensor.arso_weather_*_globalno_soncno_sevanje` | PV ocena |
-| Difuzno sončno sevanje | `sensor.arso_weather_*_difuzno_soncno_sevanje` | PV ocena |
-| Evapotranspiracija | `sensor.arso_agrometeo_*_evapotranspiracija` | Zalivanje |
-| Vodna bilanca | `sensor.arso_agrometeo_*_vodna_bilanca` | Zalivanje |
-| Oblačnost | `sensor.arso_weather_*_oblacnost` | Napoved |
-| Temperatura | `sensor.arso_weather_*_temperatura` | Kontekst |
-
-Za PV oceno in zalivanje je **priporočena** namestitev ARSO Weather integracije z omogočenim modulom Agrometeo.
-
----
-
-## Funkcionalnosti
-
-### Senzorji
-
-Integracija ustvari naslednje senzorje:
-
-#### Globalni senzorji (vedno na voljo)
-
-| Senzor | Enota | Opis |
-|--------|-------|------|
-| **Senca** | % | Povprečni delež sence na celotnem območju |
-| **Sonce** | % | Povprečni delež sonca na celotnem območju |
-| **Višina sonca** | ° | Kot sonca nad obzorjem (0° = obzorje, 90° = zenit) |
-| **Azimut sonca** | ° | Smer sonca (0° = sever, 90° = vzhod, 180° = jug, 270° = zahod) |
-| **Dnevna svetloba** | da/ne | Ali je sonce nad obzorjem |
-| **Oblačnost** | % | Oblačnost iz ARSO vremenskih podatkov |
-| **Ocena PV moči** | W | Ocena trenutne proizvodnje z dinamičnim POA izračunom |
-| **Realna PV moč** | W | Dejanska proizvodnja iz inverterja (opcijsko) |
-| **PV faktor učinkovitosti** | - | Razmerje realno/ocena (1.0 = idealno) |
-| **Potreba po zalivanju** | L | Ocenjena dnevna potreba po zalivanju za vrt |
-
-#### Senzorji napovedi PV proizvodnje
-
-| Senzor | Enota | Opis |
-|--------|-------|------|
-| **PV napoved danes** | kWh | Napovedana skupna proizvodnja danes |
-| **PV napoved jutri** | kWh | Napovedana skupna proizvodnja jutri |
-| **PV napoved 5 dni** | kWh | Skupni seštevek 5-dnevne napovedi |
-| **PV napoved naslednja ura** | W | Ocenjena moc v naslednji uri |
-| **PV naslednja ura Wh** | Wh | Energija v naslednji 1 uri |
-| **PV naslednje 3 ure Wh** | Wh | Energija v naslednjih 3 urah |
-| **PV preostanek danes** | kWh | Preostala napovedana proizvodnja danes |
-
-Vsak senzor napovedi danes/jutri/5-dni ima atribut `forecast_hourly` z urno razporeditvijo za grafe (ApexCharts).
-
-#### Senzorji po conah (avtomatska detekcija)
-
-Integracija samodejno prepozna cone iz LiDAR klasifikacije in za vsako ustvari dva senzorja:
-
-| Cona | Opis | Senzorji |
-|------|------|----------|
-| **Streha** (roof) | Celice klasificirane kot stavba (razred 6) | Senca %, Sonce % |
-| **Vrt** (garden) | Tla in nizka vegetacija v radiju 50 m od stavbe | Senca %, Sonce % |
-| **Drevesa** (trees) | Srednja in visoka vegetacija | Senca %, Sonce % |
-| **Odprto** (open) | Tla dalec od stavb | Senca %, Sonce % |
-
-Vsak senzor cone ima tudi atribute: `area_m2` (povrsina v m²) in `cell_count` (stevilo celic v gridu).
-
-#### Uporabniske cone (Zone Editor)
-
-Poleg avtomatsko zaznanih con lahko v **Zone Editorju** (CLSS Shade panel v stranski vrstici) narisite lastne poligone na satelitski karti. Podprtih je vec kartografskih slojev (Google Satelit, Google Hybrid, Esri, OpenStreetMap) z visoko resolucijo za natancno risanje.
-
-Primeri uporabniskih con:
-- **Fasadne cone** — ozke cone pred okni za avtomatizacijo zaluzij
-- **Vrtne cone** — borovnice, zelenjava, trata
-- **PV paneli** — natancen poligon namesto celotne strehe
-- **Terasa, parkirisce, bazen** — poljubne cone
-
-Po shranjevanju in ponovnem zagonu se za vsako cono ustvarijo senzorji `{ime}_shade_percent` in `{ime}_sun_percent`.
-
-### PV ocena
-
-Integracija izracuna oceno PV proizvodnje z uporabo **dinamicnega POA (Plane-of-Array)** izracuna, ki uposteva orientacijo panelov in trenutni polozaj sonca.
-
-#### Nastavitev PV sistema
-
-V **Nastavitve > Naprave > CLSS Shade > Nastavi** vnesite:
-
-| Polje | Opis | Primer |
-|-------|------|--------|
-| **PV cone in kapaciteta** | `cona:Wp` pari, loceni z vejico | `pv-visja:5925,pv-nizja:5135` |
-| **Nagib panelov** | Stopinje od vodoravne (0-90°) | `30` |
-| **Azimut panelov** | Smer panelov (0°=S, 90°=V, 180°=J, 270°=Z) | `180` |
-| **Realna PV moc senzor** | Entity ID inverterja (opcijsko) | `sensor.solaredge_current_power` |
-
-**Namig:** Narisite loceno PV cono za vsako gruco panelov na karti (Zone Editor), da bo izracun natancen.
-
-#### Izracun
-
-```
-1. POA faktor = f(polozaj_sonca, nagib_panelov, azimut_panelov)
-   — dinamicen, izracunan vsake 5 minut
-   — uposteva da nagnjeni paneli lovijo vec sevanja kot horizontalni senzor
-
-2. Za vsako PV cono:
-   POA_sevanje = ARSO_GHI × POA_faktor
-   Efektivno = POA_sevanje × (sonce% × 0.8 + 0.2)
-   Moc = Kapaciteta_Wp × (Efektivno / 1000) × (1 - Izgube)
-
-3. Skupna ocena = vsota vseh PV con
-```
-
-Kjer:
-- **ARSO_GHI** = globalno horizontalno sevanje iz ARSO Weather (W/m²)
-- **POA faktor** = `cos(θ_vpad) / sin(θ_elevacija)` × 0.7 + difuzni_faktor × 0.3
-- **Sonce%** = delez direktnega sonca na PV coni iz shadow engine
-- **Izgube** = 8% (inverter, kabliranje; privzeto za sisteme z optimizerji)
-
-#### Faktor ucinkovitosti
-
-Ce povezete realni PV senzor (SolarEdge, Fronius, Enphase...), integracija izracuna **faktor ucinkovitosti**:
-
-```
-Faktor = Realna_moc / Ocena_moci
-```
-
-| Faktor | Status | Pomen |
-|--------|--------|-------|
-| 0.85 – 1.15 | **Normalno** | Model se ujema z realnostjo |
-| < 0.70 | **Nizka ucinkovitost** | Umazani paneli, okvara, nov objekt ki senci |
-| > 1.30 | **Ocena prenizka** | Preverite nastavitve (nagib, azimut, kapaciteta) |
-
-**Uporaba:** Faktor se uporablja za kalibracijo PV napovedi (EMA - eksponentno drsece povprecje).
-
-### PV napoved proizvodnje (5 dni)
-
-Integracija izracuna napoved PV proizvodnje za **5 dni naprej** z kombinacijo:
-
-1. **Shadow forecast** — za vsako prihodnjo uro izracuna senco na PV conah iz 3D modela
-2. **Vremenska napoved** — urna oblacnost iz ARSO Weather (`weather.get_forecasts`)
-3. **POA faktor** — orientacija panelov glede na prihodnji polozaj sonca
-4. **Performance factor EMA** — kalibracija iz preteklih meritev (realno vs ocena)
-
-```
-Za vsako uro v naslednjih 5 dneh:
-  1. Polozaj sonca → senčna mapa → % sonca na PV conah
-  2. Oblačnost napoved → cloud_factor (0.25 - 1.0)
-  3. POA faktor iz kota sonca + nagib/azimut panelov
-  4. Moč = kapaciteta × (sevanje × sonce% × 0.8 + 0.2) / 1000 × performance_factor
-  5. Energija = vsota urnih moči → kWh/dan
-```
-
-#### Tiered intervali
-
-Za optimalno ravnovesje med natancnostjo in zmogljivostjo:
-
-| Dnevi | Interval korakov | Stevilo korakov | Natancnost |
-|-------|-----------------|-----------------|------------|
-| Danes + jutri | 30 min | 36 per dan | Visoka — za urne grafe |
-| Dan 3-5 | 60 min | 18 per dan | Dovolj za dnevne skupne |
-
-Skupni cas izracuna: ~2.7 min v ozadju, osvezitev vsako uro. Oddaljeni dnevi (3-5) se re-uporabijo iz cache-a do 3 ure.
-
-#### Casovna okna
-
-Poleg dnevnih skupnih vrednosti integracija izračuna tudi:
-
-| Senzor | Opis | Uporaba |
-|--------|------|---------|
-| **Naslednja 1h** | Wh v naslednji uri | Kratkoročno planiranje |
-| **Naslednje 3h** | Wh v naslednjih 3 urah | Kdaj polniti EV ali pripraviti TSV |
-| **Preostanek danes** | kWh do konca dneva | Koliko energije še pričakujemo |
-
-#### Atributi za grafe (ApexCharts)
-
-Senzorji `pv_forecast_today_kwh`, `pv_forecast_tomorrow_kwh` in `pv_forecast_5day_kwh` imajo atribut `forecast_hourly` (oz. `forecast_hourly_5day`) z urno razporeditvijo:
-
-```json
-{
-  "forecast_hourly": [
-    {"time": "2026-03-26T06:00:00Z", "estimate_w": 450, "cloud_factor": 0.85, "cloud_coverage": 20, "sun_elevation": 12.5, "poa_factor": 1.15},
-    {"time": "2026-03-26T06:30:00Z", "estimate_w": 920, "cloud_factor": 0.85, "cloud_coverage": 20, "sun_elevation": 18.3, "poa_factor": 1.22},
-    ...
-  ],
-  "total_kwh": 18.5,
-  "performance_factor_ema": 0.92
-}
-```
-
-5-dnevni senzor ima dodatno `days` atribut:
-
-```json
-{
-  "days": [
-    {"date": "2026-03-26", "total_kwh": 18.5, "label": "danes"},
-    {"date": "2026-03-27", "total_kwh": 14.2, "label": "jutri"},
-    {"date": "2026-03-28", "total_kwh": 16.8, "label": "pet 28.03."},
-    {"date": "2026-03-29", "total_kwh": 10.1, "label": "sob 29.03."},
-    {"date": "2026-03-30", "total_kwh": 12.3, "label": "ned 30.03."}
-  ]
-}
-```
-
-### Pametno zalivanje
-
-Ce je na voljo agrometeo podatki iz ARSO Weather, integracija izracuna dnevno potrebo po zalivanju:
-
-```
-Potreba = (ETP × Faktor_sence - Napoved_padavin) × Povrsina_vrta
-```
-
-Kjer:
-- **ETP** = evapotranspiracija iz ARSO agrometeo (mm/dan)
-- **Faktor sence** = 1.0 - (% sence × 0.4) — senceni predeli potrebujejo do 40% manj vode
-- **Napoved padavin** = pricakovane padavine v naslednjih 24 urah (mm)
-- Ce je **vodna bilanca** mocno negativna (suha tla), se potreba poveca za 20%
+**Namig:** Uporabite `history-graph` kartico za pregled gibanja sencenja cez dan — hitro boste prepoznali vzorce, ki se ponavljajo vsak jasen dan.
 
 ---
 
@@ -318,7 +157,7 @@ Kjer:
 1. Odprite HACS v Home Assistant.
 2. Poiscite **CLSS Shade** ali kliknite gumb zgoraj.
 3. Kliknite **Prenesi** (Download).
-4. Ponovo zaženite Home Assistant.
+4. Ponovo zazenite Home Assistant.
 
 ### Rocna namestitev
 
@@ -328,29 +167,115 @@ Kjer:
 
 ---
 
-## Nastavitev
+## Nastavitev — korak po korak
 
-1. Pojdite na **Nastavitve** > **Naprave in storitve**.
-2. Kliknite **Dodaj integracijo** in poiscite **CLSS Shade**.
+### 1. Dodajte integracijo
+
+1. Pojdite na **Nastavitve** > **Naprave in storitve** > **Dodaj integracijo**.
+2. Poiscite **CLSS Shade**.
 3. Vnesite podatke:
-   - **Ime lokacije** — poljubno ime (npr. "Dom")
-   - **Zemljepisna sirina in dolzina** — samodejno izpolnjeno iz HA nastavitev
-   - **Radij analize** — v metrih (privzeto 200 m, najvec 1000 m)
-   - **Vkljuci sosednje ploscice** — ce potrebujete vec kot 1 km² pokritost (prenese 9 ploscic namesto 1)
-4. Ob prvi nastavitvi se prenese LiDAR ploscica (~30-50 MB). To lahko traja 1-2 minuti.
-5. Po prenosu integracija samodejno zgradi 3D model in zacne izracunavati sencenje.
 
-**Opomba:** Lokacija mora biti znotraj Slovenije (lat 45.42°-46.88°, lon 13.38°-16.61°).
+| Polje | Opis | Privzeto |
+|-------|------|----------|
+| **Ime lokacije** | Poljubno ime (npr. "Dom", "Vikend") | — |
+| **Zemljepisna sirina** | Samodejno iz HA nastavitev | Vasa HA lokacija |
+| **Zemljepisna dolzina** | Samodejno iz HA nastavitev | Vasa HA lokacija |
+| **Radij analize** | V metrih — koliko dalec od vase lokacije naj se racuna sencenje | 200 m |
+| **Vkljuci sosednje ploscice** | Prenese 9 ploscic namesto 1 (za robne lokacije ali vecji radij) | Ne |
 
-### Nastavitve (Options)
+4. Pocakajte 1-2 minuti, da se prenesejo LiDAR podatki.
+5. Integracija samodejno zgradi 3D model in zacne izracunavati sencenje.
 
-Po namestitvi lahko spremenite radij in opcijo sosednjih ploscic prek **Nastavi** na integracijski kartici. Sprememba nastavitev povzroci ponoven prenos in obdelavo LiDAR podatkov.
+> **Opomba:** Lokacija mora biti znotraj Slovenije (lat 45.42-46.88, lon 13.38-16.61).
+
+### 2. Senzorji — kaj dobite "iz skatle"
+
+Po namestitvi se samodejno ustvarijo naslednji senzorji:
+
+#### Globalni senzorji
+
+| Senzor | Enota | Opis |
+|--------|-------|------|
+| **Senca** | % | Povprecni delez sence na celotnem obmocju |
+| **Sonce** | % | Povprecni delez sonca na celotnem obmocju |
+| **Visina sonca** | deg | Kot sonca nad obzorjem |
+| **Azimut sonca** | deg | Smer sonca (0=S, 90=V, 180=J, 270=Z) |
+| **Dnevna svetloba** | da/ne | Ali je sonce nad obzorjem |
+
+#### Senzorji po conah (samodejno zaznane iz LiDAR)
+
+| Cona | Opis | Senzorji |
+|------|------|----------|
+| **Streha** (roof) | Celice klasificirane kot stavba | Senca %, Sonce % |
+| **Vrt** (garden) | Tla in nizka vegetacija blizu stavb | Senca %, Sonce % |
+| **Drevesa** (trees) | Srednja in visoka vegetacija | Senca %, Sonce % |
+| **Odprto** (open) | Tla dalec od stavb | Senca %, Sonce % |
+
+### 3. Zone Editor — narisite lastne cone
+
+V stranski vrstici Home Assistant se pojavi **CLSS Shade** panel z interaktivnim urejevalnikom con:
+
+- **2D pogled:** Satelitska karta (Leaflet) z moznostjo risanja poligonov
+- **3D pogled:** Three.js 3D vizualizacija vase okolice z dejanskimi viskami stavb in dreves
+
+Za vsako uporabnisko cono se ustvarijo senzorji `{ime}_shade_percent` in `{ime}_sun_percent`.
+
+**Primeri uporabniskih con:**
+- Fasade (ozke cone pred okni za avtomatizacijo zaluzij)
+- Vrtne cone (zelenjava, borovnice, trata, bazen)
+- PV paneli (natancen poligon na strehi)
+- Terasa, parkirisce, igrisca
+
+### 4. PV napoved (opcijsko)
+
+Ce imate soncne panele, lahko nastavite PV napovedovanje:
+
+1. V **Nastavitve > Naprave > CLSS Shade > Nastavi** vnesite:
+
+| Polje | Opis | Primer |
+|-------|------|--------|
+| **PV cone in kapaciteta** | `cona:Wp` pari, loceni z vejico | `pv-visja:5925,pv-nizja:5135` |
+| **Nagib panelov** | Stopinje od vodoravne (0-90) | `30` |
+| **Azimut panelov** | Smer panelov (0=S, 90=V, 180=J, 270=Z) | `180` |
+| **Realna PV moc senzor** | Entity ID inverterja (opcijsko) | `sensor.solaredge_current_power` |
+
+2. Narisite PV cone na karti (Zone Editor) — loceno cono za vsako skupino panelov.
+
+**Dobite naslednje senzorje:**
+
+| Senzor | Enota | Opis |
+|--------|-------|------|
+| **Ocena PV moci** | W | Trenutna ocena proizvodnje |
+| **PV napoved danes** | kWh | Skupna napovedana proizvodnja danes |
+| **PV napoved jutri** | kWh | Skupna napovedana proizvodnja jutri |
+| **PV napoved 5 dni** | kWh | Sestevek 5-dnevne napovedi |
+| **PV naslednja ura** | W | Ocenjena moc v naslednji uri |
+| **PV naslednja 1h / 3h** | Wh | Energija v naslednjih 1 oz. 3 urah |
+| **PV preostanek danes** | kWh | Preostala napovedana proizvodnja |
+
+Napoved se izracuna z kombinacijo shadow forecast (5 dni, 30-min resolucija) + vremenska napoved (oblacnost/GHI iz Open-Meteo ali ARSO) + dinamicni POA faktor.
+
+> **Namig:** Ce povezete realni PV senzor (SolarEdge, Fronius, Enphase...), integracija samodejno kalibrira napoved z EMA (eksponentno drsecim povprecjem).
+
+### 5. ARSO Weather integracija (opcijsko, priporoceno)
+
+Ce imate namesceno [ARSO Weather (slovenian_weather_integration)](https://github.com/andrejs2/slovenian_weather_integration), CLSS Shade samodejno prebere vremenske podatke:
+
+| Podatek | Uporaba |
+|---------|---------|
+| Globalno soncno sevanje | PV ocena |
+| Oblacnost | Napoved |
+| Evapotranspiracija | Zalivanje |
+| Vodna bilanca | Zalivanje |
+| Temperatura | PV derating |
+
+Za PV oceno in zalivanje je **priporocena** namestitev ARSO Weather z omogocenim modulom Agrometeo.
 
 ---
 
-## Primeri uporabe
+## Primeri avtomatizacij
 
-### 1. Avtomatizacija rolet glede na sencenje
+### Avtomatizacija rolet glede na sencenje
 
 ```yaml
 automation:
@@ -382,7 +307,7 @@ automation:
           entity_id: cover.dnevna_soba_rolete
 ```
 
-### 2. Pametno zalivanje vrta
+### Pametno zalivanje vrta
 
 ```yaml
 automation:
@@ -412,7 +337,7 @@ automation:
             Senca na vrtu: {{ states('sensor.clss_shade_home_garden_shade_percent') }}%.
 ```
 
-### 3. Opozorilo ob nizki PV proizvodnji
+### Opozorilo ob senci na PV panelih
 
 ```yaml
 automation:
@@ -436,20 +361,18 @@ automation:
             Ocena proizvodnje: {{ states('sensor.clss_shade_home_ocena_pv_moci') }} W.
 ```
 
-### 4. Avtomatizacija zaluzij po fasadah (napredna uporaba)
+### Avtomatizacija zaluzij po fasadah (napredna uporaba)
 
-Za natancno upravljanje zaluzij/sencil po fasadah narisite **ozke cone** (1-2 m sirine) tik pred vsako fasado hiše v Zone Editorju. Shadow engine bo na podlagi dejanskega 3D modela (vkljucno z napusci, drevesi, sosednjimi stavbami) izracunal ali sonce pada na posamezno fasado.
-
-**Primer razporeditve:**
+Za natancno upravljanje zaluzij/sencil po fasadah narisite **ozke cone** (1-2 m sirine) tik pred vsako fasado hise v Zone Editorju. Shadow engine bo na podlagi dejanskega 3D modela (vkljucno z napusci, drevesi, sosednjimi stavbami) izracunal ali sonce pada na posamezno fasado.
 
 ```
           SV fasada (kuhinja)
-          ┌────────────┐
-          │            │
-JV fasada │    HISA    │ JZ fasada
-(panorama)│            │ (panoramsko okno
-          │            │  z napuscem)
-          └────────────┘
+          +----------------+
+          |                |
+JV fasada |      HISA      | JZ fasada
+(panorama)|                | (panoramsko okno
+          |                |  z napuscem)
+          +----------------+
           Cone: fasada_sv, fasada_jv, fasada_jz
 ```
 
@@ -457,7 +380,6 @@ JV fasada │    HISA    │ JZ fasada
 
 ```yaml
 automation:
-  # ── JZ fasada: panoramsko okno z napuscem ──
   # Poleti: zapri ko sonce sveti skozi (napusc ne zadosca)
   - alias: "Zaluzije JZ — zapri ob soncu poleti"
     trigger:
@@ -493,22 +415,7 @@ automation:
         target:
           entity_id: cover.zaluzije_dnevna_soba
 
-  # ── SV fasada: kuhinja — jutranjo sonce ──
-  - alias: "Zaluzije SV — zapri ob jutranjem soncu"
-    trigger:
-      - platform: numeric_state
-        entity_id: sensor.dom_fasada_sv_sun_percent
-        above: 60
-    condition:
-      - condition: numeric_state
-        entity_id: sensor.dom_oblacnost
-        below: 50
-    action:
-      - service: cover.close_cover
-        target:
-          entity_id: cover.zaluzije_kuhinja
-
-  # ── Vse fasade: odpri ko je oblacno ──
+  # Vse fasade: odpri ko je oblacno
   - alias: "Zaluzije — odpri ob oblacnem vremenu"
     trigger:
       - platform: numeric_state
@@ -522,36 +429,15 @@ automation:
             - cover.zaluzije_dnevna_soba
             - cover.zaluzije_kuhinja
             - cover.zaluzije_spalnica
-
-  # ── Ponocna ponastavitev ──
-  - alias: "Zaluzije — odpri ob zori"
-    trigger:
-      - platform: state
-        entity_id: sensor.dom_dnevna_svetloba
-        to: "True"
-    action:
-      - service: cover.open_cover
-        target:
-          entity_id: all
 ```
 
-**Senzorji za upravljanje zaluzij:**
+---
 
-| Senzor | Opis | Uporaba |
-|--------|------|---------|
-| `fasada_*_sun_percent` | % sonca na fasadi | Ali sonce sveti na okno (z upostevanjem napusca!) |
-| `oblacnost` | Oblacnost (%) iz ARSO | Odpri zaluzije ko je oblacno |
-| `sun_elevation` | Kot sonca nad obzorjem | Razlikovanje poletje/zima (nizek kot = daljse sence) |
-| `sun_azimuth` | Smer sonca | Za debugging in dodatne pogoje |
-| `is_day` | Dan/noc | Ponocna logika |
+## Dashboard — primeri Lovelace kartic
 
-**Namig:** Napusc, ki poleti zasenči JZ okno, je ze v LiDAR modelu! Shadow engine samodejno uposteva, da poleti (visoko sonce) napusc meče senco na okno, pozimi (nizko sonce) pa sonce pride pod napusc. Ni potrebe po rocnem nastavljanju kotov.
+Zamenjajte `dom` z imenom vase lokacije.
 
-### 5. Dashboard — primeri Lovelace kartic
-
-Spodaj so primeri kartic za celovit CLSS Shade dashboard. Zamenjajte `dom` z imenom vase lokacije.
-
-#### 5.1 Pregled — sonce in senca (gauge kartice)
+### Pregled — sonce in senca (gauge kartice)
 
 ```yaml
 type: horizontal-stack
@@ -588,28 +474,7 @@ cards:
     needle: true
 ```
 
-#### 5.2 Polozaj sonca
-
-```yaml
-type: entities
-title: "Polozaj sonca"
-icon: mdi:white-balance-sunny
-entities:
-  - entity: sensor.dom_visina_sonca
-    name: "Visina (elevacija)"
-    icon: mdi:angle-acute
-  - entity: sensor.dom_azimut_sonca
-    name: "Smer (azimut)"
-    icon: mdi:compass
-  - entity: sensor.dom_dnevna_svetloba
-    name: "Dan / noc"
-    icon: mdi:theme-light-dark
-  - entity: sensor.dom_oblacnost
-    name: "Oblacnost"
-    icon: mdi:weather-cloudy
-```
-
-#### 5.3 Sencenje po conah — primerjava
+### Sencenje po conah
 
 ```yaml
 type: entities
@@ -636,34 +501,9 @@ entities:
   - entity: sensor.dom_zelenjava_sun_percent
     name: "Zelenjava — sonce"
     icon: mdi:sprout
-  - entity: sensor.dom_jz_terasa_sun_percent
-    name: "JZ terasa — sonce"
-    icon: mdi:deck
-  - entity: sensor.dom_jv_terasa_sun_percent
-    name: "JV terasa — sonce"
-    icon: mdi:deck
 ```
 
-#### 5.4 Fasade — stanje za zaluzije
-
-```yaml
-type: glance
-title: "Fasade — osoncenje"
-columns: 3
-show_state: true
-entities:
-  - entity: sensor.dom_fasada_sv_sun_percent
-    name: "SV (kuhinja)"
-    icon: mdi:blinds
-  - entity: sensor.dom_fasada_jv_sun_percent
-    name: "JV (panorama)"
-    icon: mdi:blinds-open
-  - entity: sensor.dom_fasada_jz_sun_percent
-    name: "JZ (dnevna)"
-    icon: mdi:blinds
-```
-
-#### 5.5 Zgodovina sencenja — graf cez dan
+### Zgodovina sencenja cez dan
 
 ```yaml
 type: history-graph
@@ -674,155 +514,11 @@ entities:
     name: "Skupno sonce"
   - entity: sensor.dom_roof_sun_percent
     name: "Streha"
-  - entity: sensor.dom_borovnice_sun_percent
-    name: "Borovnice"
-  - entity: sensor.dom_zelenjava_sun_percent
-    name: "Zelenjava"
+  - entity: sensor.dom_garden_sun_percent
+    name: "Vrt"
 ```
 
-#### 5.6 Fasade cez dan — kdaj sonce pride na katero stran
-
-```yaml
-type: history-graph
-title: "Fasade — sonce cez dan"
-hours_to_show: 24
-entities:
-  - entity: sensor.dom_fasada_sv_sun_percent
-    name: "SV (kuhinja)"
-  - entity: sensor.dom_fasada_jv_sun_percent
-    name: "JV (panorama)"
-  - entity: sensor.dom_fasada_jz_sun_percent
-    name: "JZ (dnevna soba)"
-```
-
-#### 5.7 PV in energija
-
-```yaml
-type: vertical-stack
-cards:
-  - type: gauge
-    entity: sensor.dom_ocena_pv_moci
-    name: "PV ocena"
-    min: 0
-    max: 5000
-    unit: "W"
-    severity:
-      green: 2000
-      yellow: 500
-      red: 0
-    needle: true
-  - type: entities
-    entities:
-      - entity: sensor.dom_roof_sun_percent
-        name: "Streha — sonce"
-        icon: mdi:home-roof
-      - entity: sensor.dom_oblacnost
-        name: "Oblacnost"
-        icon: mdi:weather-cloudy
-      - entity: sensor.dom_visina_sonca
-        name: "Visina sonca"
-        icon: mdi:angle-acute
-```
-
-#### 5.8 Zalivanje — agrometeo
-
-```yaml
-type: vertical-stack
-cards:
-  - type: gauge
-    entity: sensor.dom_potreba_po_zalivanju
-    name: "Potreba po zalivanju"
-    min: 0
-    max: 500
-    unit: "L"
-    severity:
-      green: 0
-      yellow: 100
-      red: 300
-    needle: true
-  - type: entities
-    title: "Agrometeo podatki"
-    entities:
-      - type: attribute
-        entity: sensor.dom_potreba_po_zalivanju
-        attribute: evapotranspiration_mm
-        name: "Evapotranspiracija"
-        suffix: " mm"
-        icon: mdi:water-thermometer
-      - type: attribute
-        entity: sensor.dom_potreba_po_zalivanju
-        attribute: water_balance_mm
-        name: "Vodna bilanca"
-        suffix: " mm"
-        icon: mdi:water-percent
-      - type: attribute
-        entity: sensor.dom_potreba_po_zalivanju
-        attribute: vir_podatkov
-        name: "Vir podatkov"
-        icon: mdi:database
-      - entity: sensor.dom_garden_shade_percent
-        name: "Vrt — senca"
-        icon: mdi:flower
-      - entity: sensor.dom_borovnice_shade_percent
-        name: "Borovnice — senca"
-        icon: mdi:fruit-grapes
-```
-
-#### 5.9 Polozaj sonca — kompas in pot cez dan
-
-```yaml
-type: history-graph
-title: "Pot sonca cez dan"
-hours_to_show: 24
-entities:
-  - entity: sensor.dom_visina_sonca
-    name: "Elevacija (°)"
-  - entity: sensor.dom_azimut_sonca
-    name: "Azimut (°)"
-```
-
-#### 5.10 Celoten dashboard — priporocena razporeditev
-
-Za celovit CLSS Shade dashboard priporocamo razporeditev v 2-3 stolpce:
-
-```
-┌─────────────────┬──────────────────┬─────────────────┐
-│  Gauge: Sonce   │  Gauge: Senca    │ Gauge: Oblacnost│
-├─────────────────┴──────────────────┴─────────────────┤
-│  Polozaj sonca (entities)                            │
-├──────────────────────────┬───────────────────────────┤
-│  Cone — sence (entities) │  Fasade — glance          │
-├──────────────────────────┼───────────────────────────┤
-│  Zgodovina sencenja      │  Fasade cez dan (graf)    │
-│  (history-graph)         │  (history-graph)           │
-├──────────────────────────┼───────────────────────────┤
-│  PV ocena (gauge +       │  Zalivanje (gauge +        │
-│  entities)               │  agrometeo atributi)       │
-├──────────────────────────┴───────────────────────────┤
-│  Pot sonca cez dan (history-graph)                   │
-└──────────────────────────────────────────────────────┘
-```
-
-**Namig:** Za se lepse kartice namestite prek HACS se:
-- [mushroom-cards](https://github.com/piitaya/lovelace-mushroom) — za kompaktne entity kartice
-- [mini-graph-card](https://github.com/kalkih/mini-graph-card) — za lepe inline grafe
-- [apexcharts-card](https://github.com/RomRider/apexcharts-card) — za napredne grafe (npr. sonce/senca area chart)
-
-### 6. PV napoved — dashboard
-
-Za celovit PV napoved dashboard z ApexCharts in Mushroom karticami glejte **[docs/pv_dashboard.yaml](docs/pv_dashboard.yaml)** — pripravljen YAML za kopiranje v Lovelace.
-
-Vsebuje:
-- Status chips (realno, ocena, faktor, naslednja ura)
-- Casovna okna (1h, 3h, preostanek danes, jutri)
-- Danes — urna krivulja napovedi + realno
-- Jutri — urna krivulja napovedi
-- 5-dnevni stolpicni graf (kWh/dan)
-- Performance gauge + 5-dnevna zvezna krivulja
-
-#### Hitri primeri za ApexCharts
-
-**Danes — napoved vs realno:**
+### PV napoved — danes vs realno (ApexCharts)
 
 ```yaml
 type: custom:apexcharts-card
@@ -854,7 +550,7 @@ series:
       duration: 30min
 ```
 
-**5-dnevni stolpci:**
+### 5-dnevna napoved (stolpci)
 
 ```yaml
 type: custom:apexcharts-card
@@ -876,65 +572,38 @@ series:
       return days.map(d => [d.label, d.total_kwh]);
 ```
 
-**5-dnevna zvezna krivulja:**
+### Priporocena razporeditev dashboarda
 
-```yaml
-type: custom:apexcharts-card
-header:
-  title: "5-dnevna krivulja"
-  show: true
-series:
-  - entity: sensor.dom_pv_napoved_5_dni
-    name: Napoved
-    type: area
-    color: "#AB47BC"
-    opacity: 0.2
-    stroke_width: 2
-    data_generator: |
-      const data = entity.attributes.forecast_hourly_5day;
-      if (!data) return [];
-      return data.map(e => [new Date(e.time).getTime(), e.estimate_w]);
+```
++-------------------+--------------------+-------------------+
+|  Gauge: Sonce     |  Gauge: Senca      | Gauge: Oblacnost  |
++-------------------+--------------------+-------------------+
+|  Polozaj sonca (entities)                                  |
++-----------------------------+------------------------------+
+|  Cone — sence (entities)    |  Fasade — glance             |
++-----------------------------+------------------------------+
+|  Zgodovina sencenja         |  Fasade cez dan (graf)       |
+|  (history-graph)            |  (history-graph)             |
++-----------------------------+------------------------------+
+|  PV ocena (gauge +          |  Zalivanje (gauge +          |
+|  entities)                  |  agrometeo atributi)         |
++-----------------------------+------------------------------+
+|  PV napoved danes/jutri/5d (apexcharts)                    |
++------------------------------------------------------------+
 ```
 
----
+**Namig:** Za se lepse kartice namestite prek HACS se:
+- [mushroom-cards](https://github.com/piitaya/lovelace-mushroom) — kompaktne entity kartice
+- [mini-graph-card](https://github.com/kalkih/mini-graph-card) — lepi inline grafi
+- [apexcharts-card](https://github.com/RomRider/apexcharts-card) — napredni grafi (PV napoved, sonce/senca area chart)
 
-## Tehnicni podatki
-
-### Zmogljivost
-
-| Operacija | Cas | Opomba |
-|-----------|-----|--------|
-| Prenos LiDAR ploscice | 30-90 s | Enkratno, ~30-50 MB |
-| Rasterizacija LAZ → grid | 5-15 s | Enkratno, rezultat se kesira |
-| Izracun sencenja | 1-2 s | Vsake 5 minut |
-| PV napoved 5 dni | ~2.7 min | V ozadju, vsako uro |
-| Poraba pomnilnika | ~50 MB | Za 800×800 grid (200 m radij) |
-
-### Odvisnosti
-
-| Paket | Uporaba |
-|-------|---------|
-| `numpy` | Numericne operacije, shadow engine |
-| `laspy` | Branje LAZ datotek |
-| `laszip` | LAZ dekompresija |
-| `pyproj` | Koordinatne pretvorbe (WGS84 ↔ EPSG:3794) |
-| `scipy` | Interpolacija praznih celic v gridu |
-
-### Koordinatni sistem
-
-Slovenija uporablja koordinatni sistem **EPSG:3794 (D96/TM)** — transverzalni Merkator s centralnim meridianom 15°E. Integracija samodejno pretvarja med WGS84 (lat/lon) in D96/TM.
-
-### ARSO LiDAR streznik
-
-Ploscice se prenesejo s streznika `gis.arso.gov.si`. Integracija samodejno doloci pravilni "block number" za vsako ploscico prek HEAD probinga in rezultat kesira lokalno, da se izogne ponovnim poizvedbam.
-
-URL vzorec: `http://gis.arso.gov.si/lidar/GKOT/laz/b_{block}/D96TM/TM_{e}_{n}.laz`
+Za celovit PV dashboard z ApexCharts in Mushroom karticami glejte **[docs/pv_dashboard.yaml](docs/pv_dashboard.yaml)**.
 
 ---
 
 ## Razhroscevanje
 
-Ce naletite na tezave, omogocite razhroscevalno beleženje:
+Ce naletite na tezave, omogocite razhroscevalno belezenje:
 
 ```yaml
 logger:
@@ -953,19 +622,47 @@ Uporabni dnevniski zapisi:
 
 ---
 
-## Zahvala in atribucija
+## Zmogljivost
 
-- **LiDAR podatki**: [Geodetska uprava RS (GURS)](https://www.e-prostor.gov.si/) / [ARSO](https://www.arso.gov.si/), licenca CC 4.0
-- **CLSS projekt**: [Flycom Technologies](https://flycom.si/), ciklicno lasersko skeniranje Slovenije 2023-2025
-- **Inspiracija**: [HA_Solar_Shade](https://github.com/LawPaul/HA_Solar_Shade) avtorja LawPaul — ideja za uporabo LiDAR podatkov za analizo sencenja v Home Assistant
-- **Vremenski podatki**: [slovenian_weather_integration](https://github.com/andrejs2/slovenian_weather_integration) — ARSO Weather za Home Assistant
-- **CLSS pregledovalnik**: [clss.si](https://clss.si) — 3D pregledovalnik LiDAR podatkov
+| Operacija | Cas | Opomba |
+|-----------|-----|--------|
+| Prenos LiDAR ploscice | 30-90 s | Enkratno, ~30-50 MB |
+| Rasterizacija LAZ -> grid | 5-15 s | Enkratno, rezultat se kesira |
+| Izracun sencenja | 1-2 s | Vsake 5 minut |
+| PV napoved 5 dni | ~2.7 min | V ozadju, vsako uro |
+| Poraba pomnilnika | ~50 MB | Za 800x800 grid (200 m radij) |
+
+---
+
+## Podatkovni viri in atribucija
+
+| Vir | Podatki | Licenca |
+|-----|---------|---------|
+| **[GURS / E-prostor](https://www.e-prostor.gov.si/)** | LiDAR podatki (CLSS) | CC 4.0 (obvezna atribucija) |
+| **[ARSO](https://www.arso.gov.si/)** | LiDAR streznik, vremenske meritve | Javni podatki |
+| **[Flycom Technologies](https://flycom.si/)** | Izvajalec CLSS 2023-2025 | — |
+| **[Open-Meteo](https://open-meteo.com/)** | GHI napoved, DEM horizont | Free tier |
+| **[CLSS pregledovalnik](https://clss.si)** | 3D pregled LiDAR podatkov | — |
+
+### Inspiracija
+
+- [HA_Solar_Shade](https://github.com/LawPaul/HA_Solar_Shade) avtorja LawPaul — ideja za uporabo LiDAR podatkov za analizo sencenja v Home Assistant
+
+---
+
+## Znane omejitve (beta)
+
+- **Samo Slovenija** — podatki CLSS/GURS obstajajo le za RS
+- **INCA nowcasting** (soncno sevanje) pokriva le JV Slovenijo — za ostalo se uporablja Open-Meteo
+- **Sosednje ploscice** potrebujejo 3-4 GB RAM — uporabite previdno
+- **POF ortophoto** (16cm resolucija za 3D) zahteva rocen prenos s CLSS pregledovalnika
+- **Sezonski model** je poenostavljen — predpostavlja listavce povsod (ne razlikuje med iglavci in listavci)
 
 ---
 
 ## Prispevanje
 
-Ce najdete napake ali imate predloge za izboljsave, odprite [issue](https://github.com/andrejs2/ha_clss_shade/issues) ali posljite pull request.
+Ce najdete napake ali imate predloge za izboljsave, odprite [issue](https://github.com/andrejs2/ha_clss_shade/issues) ali posljite pull request. Ker je integracija v beta fazi, so vsi prispevki se posebej dobrodosli!
 
 ---
 
@@ -985,7 +682,7 @@ Ce vam ta integracija koristi, me lahko podprete:
 |---------|------|
 | **[ARSO Weather](https://github.com/andrejs2/slovenian_weather_integration)** | Home Assistant integracija za vremenske podatke ARSO — 12 modulov, 247 lokacij |
 | **[ARSO Potresi](https://github.com/andrejs2/arso_potresi)** | Home Assistant integracija za podatke o potresih iz ARSO |
-| **[HA Assist — Slovenscina](https://github.com/home-assistant/intents/tree/main/sentences/sl)** | Slovenscina za glasovnega pomicnika Home Assistant |
+| **[HA Assist — Slovenscina](https://github.com/home-assistant/intents/tree/main/sentences/sl)** | Slovenscina za glasovnega pomocnika Home Assistant |
 
 [python-shield]: https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54
 [python]: https://www.python.org/

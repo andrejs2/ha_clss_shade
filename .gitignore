@@ -32,3 +32,27 @@ Thumbs.db
 .env
 .env.local
 data/
+
+# Claude Code (internal)
+.claude/
+CLAUDE.md
+SESSION_LOG.md
+TODO.md
+IMPLEMENTATION_PLAN.md
+API_REFERENCE.md
+
+# Internal docs (not part of integration)
+docs/ha-custom-integration-reference.md
+docs/navodila_pregledovalnik_clss.pdf
+
+# Logs
+*.log
+
+# Screenshots and temporary images
+Posnetek zaslona *.png
+samo_tla.png
+tla_stavbe.png
+tla_stene.png
+
+# PDFs (not part of the integration)
+Ljubljana_porocilo.pdf
