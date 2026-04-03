@@ -479,6 +479,16 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
     # Forecast helpers
     # ------------------------------------------------------------------
 
+    def _forecast_task_done(self, task: asyncio.Task) -> None:
+        """Handle shadow forecast task completion — log errors."""
+        self._shadow_forecast_task = None
+        if task.cancelled():
+            _LOGGER.debug("Shadow forecast task was cancelled")
+            return
+        exc = task.exception()
+        if exc:
+            _LOGGER.error("Shadow forecast task failed: %s", exc, exc_info=exc)
+
     async def _async_refresh_shadow_forecast(self) -> None:
         """Recompute shadow forecast for N days in background executor.
 
@@ -486,7 +496,9 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
         Far days (2+) reuse cached data if less than FORECAST_FAR_CACHE_HOURS old.
         Total ~2.7 min for 5 days, runs in executor thread every ~1 hour.
         """
+        _LOGGER.info("Shadow forecast: starting computation")
         if self._site is None or self._zones is None:
+            _LOGGER.warning("Shadow forecast: site or zones not ready, skipping")
             return
 
         now = datetime.now(tz=timezone.utc)
@@ -729,7 +741,7 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
                     f"{DOMAIN}_shadow_forecast",
                 )
                 self._shadow_forecast_task.add_done_callback(
-                    lambda _: setattr(self, "_shadow_forecast_task", None)
+                    self._forecast_task_done
                 )
 
             weather_stale = (
@@ -884,7 +896,7 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
                     f"{DOMAIN}_shadow_forecast",
                 )
                 self._shadow_forecast_task.add_done_callback(
-                    lambda _: setattr(self, "_shadow_forecast_task", None)
+                    self._forecast_task_done
                 )
 
             weather_stale = (
