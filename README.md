@@ -34,6 +34,10 @@
 
 Namesto poenostavljenih modelov ali rocnega nastavljanja kotov, integracija uporabi **dejanski 3D model terena, stavb in dreves**, ki ga pridobi iz javno dostopnih LiDAR podatkov. Rezultat je natancna analiza sencenja, ki uposteva vse okoliske objekte: sosednje stavbe, drevesa, teren, napusce, ograje...
 
+| 3D pogled iz LiDAR podatkov | 2D urejevalnik con | 3D risanje con |
+|:---:|:---:|:---:|
+| ![3D viewer](docs/screenshots/3d_viewer.png) | ![2D editor](docs/screenshots/2d_zone_editor.png) | ![3D zones](docs/screenshots/3d_zone_drawing.png) |
+
 ### Primeri uporabe
 
 - **Avtomatizacija rolet/zaluzij** — samodejno zapri, ko sonce osvetli okno; odpri, ko je v senci
@@ -240,6 +244,10 @@ Po namestitvi ali restartu Home Assistant potrebujejo nekateri senzorji **cas za
 
 ### 2. Senzorji — kaj dobite "iz skatle"
 
+| Senzorji | Cone | PV napoved |
+|:---:|:---:|:---:|
+| ![Senzorji](docs/screenshots/sensors_1.png) | ![Cone](docs/screenshots/zones_overview.png) | ![PV](docs/screenshots/pv_forecast.png) |
+
 Po namestitvi se samodejno ustvarijo naslednji senzorji:
 
 #### Globalni senzorji
@@ -262,6 +270,8 @@ Po namestitvi se samodejno ustvarijo naslednji senzorji:
 | **Odprto** (open) | Tla dalec od stavb | Senca %, Sonce % |
 
 ### 3. Zone Editor — narisite lastne cone
+
+![Zone Editor — 2D pogled s satelitsko karto](docs/screenshots/2d_zone_editor.png)
 
 V stranski vrstici Home Assistant se pojavi **CLSS Shade** panel z interaktivnim urejevalnikom con:
 
@@ -322,6 +332,10 @@ Ce imate namesceno [ARSO Weather (slovenian_weather_integration)](https://github
 Za PV oceno in zalivanje je **priporocena** namestitev ARSO Weather z omogocenim modulom Agrometeo.
 
 ### 6. Pametno zalivanje po conah (opcijsko)
+
+| Agrometeo podatki | Potreba po zalivanju |
+|:---:|:---:|
+| ![Agrometeo](docs/screenshots/agrometeo.png) | ![Zalivanje](docs/screenshots/irrigation_sensor.png) |
 
 Ce imate namescen ARSO Weather z modulom **Agrometeo**, integracija izracuna **potrebo po zalivanju za vsako cono posebej** — z 5-dnevno napovedjo.
 
@@ -612,6 +626,8 @@ automation:
 
 ### Avtomatizacija zaluzij po fasadah (napredna uporaba)
 
+![3D fasadni senzorji](docs/screenshots/3d_facade.png)
+
 Za natancno upravljanje zaluzij/sencil po fasadah narisite **ozke cone** (1-2 m sirine) tik pred vsako fasado hise v Zone Editorju. Shadow engine bo na podlagi dejanskega 3D modela (vkljucno z napusci, drevesi, sosednjimi stavbami) izracunal ali sonce pada na posamezno fasado.
 
 ```
@@ -683,6 +699,10 @@ automation:
 ---
 
 ## Dashboard — primeri Lovelace kartic
+
+| Senzorji in cone | Pot sonca cez dan |
+|:---:|:---:|
+| ![Senzorji](docs/screenshots/sensors_2.png) | ![Pot sonca](docs/screenshots/sun_path.png) |
 
 Zamenjajte `dom` z imenom vase lokacije.
 
