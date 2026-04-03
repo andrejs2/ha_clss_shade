@@ -487,11 +487,16 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
         """Compute per-zone irrigation forecasts for all irrigable zones."""
         from .const import CROP_KC, IRRIGABLE_ZONE_TYPES
 
+        # Auto-detected zones are too large for irrigation — skip them
+        AUTO_ZONES = {"roof", "garden", "trees", "open"}
+
         results: dict[str, ZoneIrrigationForecast] = {}
         if not self._zones or not weather.agro_days:
             return results
 
         for name, zd in zone_data.items():
+            if name in AUTO_ZONES:
+                continue
             zone = self._zones.get(name)
             if not zone or zone.zone_type not in IRRIGABLE_ZONE_TYPES:
                 continue

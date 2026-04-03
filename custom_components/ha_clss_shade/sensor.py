@@ -255,8 +255,11 @@ async def async_setup_entry(
             )
         )
 
-    # Per-zone irrigation sensors (for irrigable zone types)
+    # Per-zone irrigation sensors (user-defined irrigable zones only)
+    _AUTO_ZONES = {"roof", "garden", "trees", "open"}
     for zone_name in coordinator.zone_names:
+        if zone_name in _AUTO_ZONES:
+            continue
         zone_type = coordinator.zone_type(zone_name)
         if zone_type not in IRRIGABLE_ZONE_TYPES:
             continue
