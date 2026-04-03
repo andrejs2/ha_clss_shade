@@ -160,6 +160,7 @@ ZONE_ICONS = {
     "berries": "mdi:fruit-grapes",
     "fruit_trees": "mdi:tree-outline",
     "flowers": "mdi:flower-tulip",
+    "greenhouse": "mdi:greenhouse",
     "trees": "mdi:tree",
     "open": "mdi:grass",
     "custom": "mdi:select-group",
@@ -593,12 +594,19 @@ class ClssZoneIrrigationSensor(CoordinatorEntity[ClssShadeCoordinator], SensorEn
         forecast = data.zone_irrigation.get(self._zone_name)
         if forecast is None:
             return None
+        throughput = self.coordinator.zone_throughput(self._zone_name)
+        duration_min = None
+        if throughput and throughput > 0 and forecast.today_liters > 0:
+            duration_min = round(forecast.today_liters / throughput, 1)
+
         attrs: dict = {
             "crop_kc": forecast.crop_kc,
             "zone_type": forecast.zone_type,
             "area_m2": forecast.area_m2,
             "today_need_mm": forecast.today_need_mm,
             "correction_factor": forecast.correction_factor,
+            "throughput_lpm": throughput,
+            "duration_minutes": duration_min,
         }
         # 5-day forecast breakdown
         daily = []
@@ -611,6 +619,7 @@ class ClssZoneIrrigationSensor(CoordinatorEntity[ClssShadeCoordinator], SensorEn
                 "precipitation_mm": day.precipitation_mm,
                 "water_balance_mm": day.water_balance_mm,
                 "shade_percent": day.shade_percent,
+                "seasonal_factor": day.seasonal_factor,
                 "tip": day.tip,
             })
         attrs["forecast_daily"] = daily

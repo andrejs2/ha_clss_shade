@@ -232,11 +232,14 @@
       <option value="berries">Jagodičje / Berries</option>
       <option value="fruit_trees">Sadno drevje / Fruit trees</option>
       <option value="flowers">Rože / Flowers</option>
+      <option value="greenhouse">Rastlinjak / Greenhouse</option>
       <option value="terrace">Terasa / Terrace</option>
       <option value="pv">PV paneli / Solar</option>
       <option value="parking">Parkirišče</option>
       <option value="pool">Bazen / Pool</option>
     </select>
+    <label for="zone-throughput">Pretok zalivanja (L/min) — opcijsko</label>
+    <input type="number" id="zone-throughput" placeholder="npr. 8" min="0" step="0.1" />
     <label for="zone-color">Barva</label>
     <input type="color" id="zone-color" value="#2196F3" />
     <div class="btn-row">
@@ -291,6 +294,7 @@
     berries:     '#AB47BC',
     fruit_trees: '#26A69A',
     flowers:     '#EC407A',
+    greenhouse:  '#78909C',
     terrace:     '#FF9800',
     pv:          '#FFC107',
     parking:     '#9E9E9E',
@@ -484,6 +488,7 @@
   function showModal() {
     document.getElementById('zone-name').value = '';
     document.getElementById('zone-type').value = 'custom';
+    document.getElementById('zone-throughput').value = '';
     document.getElementById('zone-color').value = '#2196F3';
     document.getElementById('modal-overlay').classList.add('active');
     setTimeout(() => document.getElementById('zone-name').focus(), 100);
@@ -502,6 +507,8 @@
     const name = document.getElementById('zone-name').value.trim().toLowerCase().replace(/\s+/g, '_');
     const zoneType = document.getElementById('zone-type').value;
     const color = document.getElementById('zone-color').value;
+    const throughputRaw = document.getElementById('zone-throughput').value;
+    const throughput = throughputRaw ? parseFloat(throughputRaw) : null;
 
     if (!name) {
       document.getElementById('zone-name').style.borderColor = '#f44336';
@@ -526,6 +533,9 @@
       vertices: coords,
       color: color,
     };
+    if (throughput && throughput > 0) {
+      zone.throughput_lpm = throughput;
+    }
 
     customZones.push(zone);
 

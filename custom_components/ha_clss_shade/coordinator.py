@@ -175,6 +175,9 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
         self._shadow_forecast_task: asyncio.Task | None = None
         self._weather_entity_id: str = ""
 
+        # Per-zone throughput (L/min) for irrigation duration calculation
+        self._zone_throughput: dict[str, float] = {}
+
         # Open-Meteo hourly forecast (GHI + temp + cloud)
         self._openmeteo_forecast_cache: list[dict] = []
         self._openmeteo_forecast_fetched_at: datetime | None = None
@@ -222,6 +225,10 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
         if self._zones is None:
             return []
         return self._zones.names
+
+    def zone_throughput(self, name: str) -> float | None:
+        """Get irrigation throughput (L/min) for a zone, or None."""
+        return self._zone_throughput.get(name)
 
     def zone_type(self, name: str) -> str:
         """Get zone type by name."""
@@ -288,6 +295,10 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
                         self._create_custom_zone, zconf
                     )
                     self._zones.add(zone)
+                    # Store throughput for irrigation duration
+                    tput = zconf.get("throughput_lpm")
+                    if tput and tput > 0:
+                        self._zone_throughput[zone.name] = float(tput)
                     _LOGGER.info(
                         "Loaded custom zone '%s' (%s): %d cells",
                         zone.name,

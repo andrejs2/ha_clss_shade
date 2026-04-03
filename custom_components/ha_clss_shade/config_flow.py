@@ -35,6 +35,7 @@ ZONE_TYPES = {
     "berries": "Berries / Jagodičje",
     "fruit_trees": "Fruit trees / Sadno drevje",
     "flowers": "Flowers / Rože",
+    "greenhouse": "Greenhouse / Rastlinjak",
     "terrace": "Terrace / Terasa",
     "pv": "PV Panels / Sončne celice",
     "parking": "Parking / Parkirišče",

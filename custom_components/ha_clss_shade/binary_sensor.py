@@ -96,9 +96,14 @@ class ClssRecommendedWateringSensor(
         forecast = data.zone_irrigation.get(self._zone_name)
         if forecast is None:
             return None
+        throughput = self.coordinator.zone_throughput(self._zone_name)
+        duration_min = None
+        if throughput and throughput > 0 and forecast.today_liters > 0:
+            duration_min = round(forecast.today_liters / throughput, 1)
         return {
             "need_liters": forecast.today_liters,
             "need_mm": forecast.today_need_mm,
             "crop_kc": forecast.crop_kc,
             "zone_type": forecast.zone_type,
+            "duration_minutes": duration_min,
         }

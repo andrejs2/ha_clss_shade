@@ -73,6 +73,7 @@ def ws_get_config(
                 vol.Optional("offset_n"): vol.Coerce(float),
                 vol.Optional("radius"): vol.Coerce(float),
                 vol.Optional("color"): str,
+                vol.Optional("throughput_lpm"): vol.Coerce(float),
             }
         ],
     }

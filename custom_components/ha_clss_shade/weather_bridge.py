@@ -546,6 +546,7 @@ class ZoneIrrigationDay:
     precipitation_mm: float | None
     water_balance_mm: float | None
     shade_percent: float
+    seasonal_factor: float
     tip: str  # "meritev", "napoved", "danes"
 
 
@@ -629,6 +630,8 @@ def compute_zone_irrigation_forecast(
     Returns:
         ZoneIrrigationForecast with 5-day daily breakdown, or None.
     """
+    from .const import SEASONAL_FACTOR
+
     if not agro_days:
         return None
 
@@ -668,13 +671,23 @@ def compute_zone_irrigation_forecast(
         precip = agro.padavine_24h_mm or 0.0
         wbal = agro.vodna_bilanca_mm
 
+        # Seasonal factor: reduce/zero irrigation in winter/shoulder months
+        seasonal = SEASONAL_FACTOR.get(target.month, 1.0)
+        # Greenhouses irrigate year-round
+        if zone_type == "greenhouse":
+            seasonal = 1.0
+
         # Apply historical correction to forecast precipitation only
         effective_precip = precip
         if agro.tip in ("napoved", "danes"):
             effective_precip = precip * correction
 
-        # FAO-56 formula
-        need_mm = crop_kc * etp * shade_factor - effective_precip
+        # Greenhouses don't receive rain
+        if zone_type == "greenhouse":
+            effective_precip = 0.0
+
+        # FAO-56 formula with seasonal adjustment
+        need_mm = crop_kc * etp * shade_factor * seasonal - effective_precip
 
         # Dry soil boost
         if wbal is not None and wbal < -10:
@@ -692,6 +705,7 @@ def compute_zone_irrigation_forecast(
             precipitation_mm=precip,
             water_balance_mm=wbal,
             shade_percent=shade_percent,
+            seasonal_factor=seasonal,
             tip=agro.tip,
         )
         forecast_days.append(day_result)
