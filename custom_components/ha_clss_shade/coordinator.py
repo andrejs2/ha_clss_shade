@@ -607,6 +607,10 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
 
         _LOGGER.info("Shadow forecast computed: %s time steps", "+".join(str(n) for n in step_counts))
 
+        # Trigger a data refresh so PV forecast sensors update immediately
+        # instead of waiting for the next 5-min cycle
+        self.hass.loop.call_soon_threadsafe(self.async_request_refresh)
+
     async def _async_refresh_openmeteo_forecast(self) -> None:
         """Fetch hourly GHI forecast from Open-Meteo (free, global)."""
         try:
