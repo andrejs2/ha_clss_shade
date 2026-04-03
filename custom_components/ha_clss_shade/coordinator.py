@@ -511,6 +511,12 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
         existing_cache = dict(self._shadow_forecast_cache)
         existing_timestamps = dict(self._shadow_forecast_day_computed)
 
+        # Only compute forecast for PV zones + roof (fallback) — not all 19 zones
+        forecast_zone_names = list(self._pv_zones_config.keys()) if self._pv_zones_config else []
+        if "roof" not in forecast_zone_names:
+            forecast_zone_names.append("roof")
+        _LOGGER.info("Shadow forecast: computing for zones %s", forecast_zone_names)
+
         # Incremental: compute one day at a time, update cache after each
         valid_keys = {(today + timedelta(days=i)).isoformat() for i in range(FORECAST_DAYS)}
         step_counts = []
@@ -531,6 +537,7 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
                 day_result = await self.hass.async_add_executor_job(
                     compute_shadow_forecast,
                     site, zones, lat, lon, target, step, horizon,
+                    forecast_zone_names,
                 )
                 # Update cache immediately after each day
                 self._shadow_forecast_cache[key] = day_result

@@ -92,14 +92,17 @@ def compute_shadow_forecast(
     target_date: date,
     interval_minutes: int = 30,
     horizon: HorizonProfile | None = None,
+    forecast_zone_names: list[str] | None = None,
 ) -> list[ShadowForecastStep]:
     """Compute per-zone sun percentages for each time step of a day.
 
     For each interval from 4:00 to 22:00 UTC, computes sun position and
     shadow map, then extracts per-zone sun percentages.
 
-    Takes ~1.3s per step × 36 steps = ~47s total (runs in executor thread).
+    If forecast_zone_names is given, only those zones are evaluated (much
+    faster when only PV zones are needed for the forecast).
     """
+    target_names = forecast_zone_names if forecast_zone_names else zones.names
     steps: list[ShadowForecastStep] = []
 
     for hour in range(4, 22):
@@ -121,14 +124,14 @@ def compute_shadow_forecast(
                     dt=dt,
                     sun_elevation=sun.elevation,
                     sun_azimuth=sun.azimuth,
-                    zone_sun_pct={name: 0.0 for name in zones.names},
+                    zone_sun_pct={name: 0.0 for name in target_names},
                 ))
                 continue
 
             result = compute_shadow_map(site, sun, target_date, horizon)
 
             zone_sun: dict[str, float] = {}
-            for name in zones.names:
+            for name in target_names:
                 zone = zones.get(name)
                 if zone and zone.cell_count > 0:
                     zone_sun[name] = round(zone.sun_percent(result), 1)
@@ -143,9 +146,10 @@ def compute_shadow_forecast(
             ))
 
     _LOGGER.info(
-        "Shadow forecast for %s: %d steps, %d daytime",
+        "Shadow forecast for %s: %d steps, %d daytime, zones=%s",
         target_date, len(steps),
         sum(1 for s in steps if s.sun_elevation > 0),
+        target_names,
     )
     return steps
 
