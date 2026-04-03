@@ -74,7 +74,7 @@ FORECAST_FAR_CACHE_HOURS = 3  # cache far-day shadow data for N hours
 # INCA nowcasting
 INCA_BASE_URL = "https://meteo.arso.gov.si"
 INCA_SI0ZM_JSON = "/uploads/probase/www/nowcast/inca/inca_si0zm_data.json?prod=si0zm"
-INCA_REFRESH_INTERVAL_MIN = 10
+INCA_REFRESH_INTERVAL_MIN = 15  # INCA updates every 15 min
 INCA_BBOX = (44.67, 12.1, 47.42, 17.44)  # lat_min, lon_min, lat_max, lon_max
 INCA_WIDTH = 800
 INCA_HEIGHT = 600
