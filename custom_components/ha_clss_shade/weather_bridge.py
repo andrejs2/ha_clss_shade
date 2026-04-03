@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -527,3 +527,188 @@ def estimate_irrigation_need(
     # Convert mm to liters (1 mm over 1 m² = 1 liter)
     liters = net_need_mm * area_m2
     return round(max(0.0, liters), 1)
+
+
+# ---------------------------------------------------------------------------
+# Per-zone irrigation forecast (FAO-56 Kc)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class ZoneIrrigationDay:
+    """Single day of per-zone irrigation forecast."""
+
+    date: str
+    need_mm: float
+    need_liters: float
+    kc: float
+    etp_mm: float | None
+    precipitation_mm: float | None
+    water_balance_mm: float | None
+    shade_percent: float
+    tip: str  # "meritev", "napoved", "danes"
+
+
+@dataclass
+class ZoneIrrigationForecast:
+    """Multi-day irrigation forecast for a single zone."""
+
+    today_liters: float
+    today_need_mm: float
+    forecast_daily: list[ZoneIrrigationDay]
+    correction_factor: float
+    crop_kc: float
+    area_m2: float
+    zone_type: str
+
+
+def compute_historical_correction(agro_days: list[AgroDayData]) -> float:
+    """Compare measured vs forecast precipitation on overlapping dates.
+
+    Finds dates that have both a measurement and a forecast entry,
+    sums their precipitation, and returns the ratio measured/forecast.
+    If forecast overestimated rain (predicted 10mm, actual 3mm), correction
+    is 0.3 — future forecast precipitation is discounted.
+
+    Returns:
+        Correction factor clamped to [0.5, 2.0]. Default 1.0 if no overlap.
+    """
+    # Group by date
+    measurements: dict[str, float] = {}
+    forecasts: dict[str, float] = {}
+
+    for day in agro_days:
+        precip = day.padavine_24h_mm
+        if precip is None:
+            continue
+        if day.tip == "meritev":
+            measurements[day.datum] = precip
+        elif day.tip in ("napoved", "danes"):
+            forecasts[day.datum] = precip
+
+    # Find overlapping dates
+    overlap_dates = set(measurements.keys()) & set(forecasts.keys())
+    if not overlap_dates:
+        return 1.0
+
+    measured_total = sum(measurements[d] for d in overlap_dates)
+    forecast_total = sum(forecasts[d] for d in overlap_dates)
+
+    if forecast_total <= 0.1:
+        # Forecast said no rain — no correction possible
+        return 1.0
+
+    correction = measured_total / forecast_total
+    return max(0.5, min(2.0, correction))
+
+
+def compute_zone_irrigation_forecast(
+    agro_days: list[AgroDayData],
+    shade_percent: float,
+    area_m2: float,
+    crop_kc: float,
+    zone_type: str,
+) -> ZoneIrrigationForecast | None:
+    """Compute per-zone irrigation need with 5-day forecast.
+
+    Uses FAO-56 crop coefficients and shade-adjusted ETP:
+        shade_factor = 0.5 + 0.5 * sun_fraction
+        daily_need_mm = Kc * ETP * shade_factor - effective_precipitation
+        if water_balance < -10: daily_need_mm *= 1.2
+
+    Historical correction adjusts forecast precipitation based on
+    how accurate past precipitation forecasts were.
+
+    Args:
+        agro_days: Multi-day agrometeo data from ARSO.
+        shade_percent: Current shade percentage for this zone (0-100).
+        area_m2: Zone area in square meters.
+        crop_kc: FAO-56 crop coefficient for this zone type.
+        zone_type: Zone type string.
+
+    Returns:
+        ZoneIrrigationForecast with 5-day daily breakdown, or None.
+    """
+    if not agro_days:
+        return None
+
+    correction = compute_historical_correction(agro_days)
+
+    # Shade factor (FAO-56 aligned): full shade = 50% ETP, full sun = 100%
+    sun_fraction = 1.0 - shade_percent / 100.0
+    shade_factor = 0.5 + 0.5 * sun_fraction
+
+    # Build date-keyed lookup: prefer measurement over forecast for same date
+    today_str = date.today().isoformat()
+    day_by_date: dict[str, AgroDayData] = {}
+    for day in agro_days:
+        if not day.datum:
+            continue
+        existing = day_by_date.get(day.datum)
+        if existing is None:
+            day_by_date[day.datum] = day
+        elif day.tip == "meritev" or (day.tip == "danes" and existing.tip == "napoved"):
+            # Measurement or today-entry takes priority over forecast
+            day_by_date[day.datum] = day
+
+    # Select 5 days starting from today
+    forecast_days: list[ZoneIrrigationDay] = []
+    today_liters = 0.0
+    today_need_mm = 0.0
+
+    for offset in range(5):
+        target = date.today() + timedelta(days=offset)
+        target_str = target.isoformat()
+
+        agro = day_by_date.get(target_str)
+        if agro is None or agro.evapotranspiracija_mm is None:
+            continue
+
+        etp = agro.evapotranspiracija_mm
+        precip = agro.padavine_24h_mm or 0.0
+        wbal = agro.vodna_bilanca_mm
+
+        # Apply historical correction to forecast precipitation only
+        effective_precip = precip
+        if agro.tip in ("napoved", "danes"):
+            effective_precip = precip * correction
+
+        # FAO-56 formula
+        need_mm = crop_kc * etp * shade_factor - effective_precip
+
+        # Dry soil boost
+        if wbal is not None and wbal < -10:
+            need_mm *= 1.2
+
+        need_mm = max(0.0, need_mm)
+        need_liters = round(need_mm * area_m2, 1)
+
+        day_result = ZoneIrrigationDay(
+            date=target_str,
+            need_mm=round(need_mm, 2),
+            need_liters=need_liters,
+            kc=crop_kc,
+            etp_mm=etp,
+            precipitation_mm=precip,
+            water_balance_mm=wbal,
+            shade_percent=shade_percent,
+            tip=agro.tip,
+        )
+        forecast_days.append(day_result)
+
+        if offset == 0:
+            today_liters = need_liters
+            today_need_mm = round(need_mm, 2)
+
+    if not forecast_days:
+        return None
+
+    return ZoneIrrigationForecast(
+        today_liters=today_liters,
+        today_need_mm=today_need_mm,
+        forecast_daily=forecast_days,
+        correction_factor=round(correction, 3),
+        crop_kc=crop_kc,
+        area_m2=area_m2,
+        zone_type=zone_type,
+    )

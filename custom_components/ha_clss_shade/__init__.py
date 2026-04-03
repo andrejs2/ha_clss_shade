@@ -74,7 +74,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Forward to platforms
     await hass.config_entries.async_forward_entry_setups(
-        entry, [Platform.SENSOR]
+        entry, [Platform.SENSOR, Platform.BINARY_SENSOR]
     )
 
     # Reload on options change
@@ -95,7 +95,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     from homeassistant.const import Platform
 
     return await hass.config_entries.async_unload_platforms(
-        entry, [Platform.SENSOR]
+        entry, [Platform.SENSOR, Platform.BINARY_SENSOR]
     )
 
 

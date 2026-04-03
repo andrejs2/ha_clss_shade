@@ -148,6 +148,20 @@ Ce opazite, da se sencenje nenadoma spremeni (npr. iz 20% na 80% v 15 minutah), 
 
 ---
 
+## Kaj potrebujem?
+
+| Zahteva | Status | Opis |
+|---------|--------|------|
+| **Home Assistant 2024.4+** | Obvezno | Integracija zahteva novejso verzijo HA |
+| **Lokacija v Sloveniji** | Obvezno | LiDAR podatki obstajajo samo za RS |
+| **[ARSO Weather](https://github.com/andrejs2/slovenian_weather_integration)** | Priporoceno | Za PV napoved, zalivanje, oblacnost. Omogocite modul Agrometeo za zalivanje |
+| **Inverter senzor** (SolarEdge, Fronius...) | Opcijsko | Za kalibracijo PV napovedi z dejansko proizvodnjo |
+| **[ApexCharts Card](https://github.com/RomRider/apexcharts-card)** | Opcijsko | Za napredne grafe PV napovedi v dashboardu |
+
+> **Namig:** Integracija deluje tudi brez ARSO Weather — dobite analizo sencenja, polozaj sonca in cone. Za PV napoved in pametno zalivanje pa je ARSO Weather priporocen.
+
+---
+
 ## Namestitev
 
 ### HACS (priporoceno)
@@ -270,6 +284,104 @@ Ce imate namesceno [ARSO Weather (slovenian_weather_integration)](https://github
 | Temperatura | PV derating |
 
 Za PV oceno in zalivanje je **priporocena** namestitev ARSO Weather z omogocenim modulom Agrometeo.
+
+### 6. Pametno zalivanje po conah (opcijsko)
+
+Ce imate namescen ARSO Weather z modulom **Agrometeo**, integracija izracuna **potrebo po zalivanju za vsako cono posebej** — z 5-dnevno napovedjo.
+
+#### Kako deluje
+
+Formula temelji na standardu [FAO-56](https://www.fao.org/4/x0490e/x0490e00.htm) (Penman-Monteith):
+
+```
+potreba_mm = Kc × ETP × faktor_sence - padavine
+```
+
+Kjer:
+- **Kc** = koeficient pridelka (FAO-56) — razlicne rastline potrebujejo razlicno kolicino vode
+- **ETP** = evapotranspiracija iz ARSO agrometeo (mm/dan)
+- **faktor_sence** = `0.5 + 0.5 × delez_sonca` — sencene cone potrebujejo do 50% manj vode
+- **padavine** = napovedane padavine (korigirane z zgodovinsko natancnostjo napovedi)
+
+#### Koeficienti pridelkov (Kc)
+
+| Tip cone | Kc | Opis |
+|----------|-----|------|
+| **Travnik** (lawn) | 0.95 | Trata, zelenica — skoraj konstantna potreba |
+| **Zelenjava** (vegetables) | 1.05 | Paradiznik, solata, fizol — vecja potreba |
+| **Jagodičje** (berries) | 0.85 | Borovnice, maline — obcutljive na preveliko vodo |
+| **Sadno drevje** (fruit_trees) | 0.95 | Jablane, hruske |
+| **Roze** (flowers) | 0.90 | Okrasne rastline |
+| **Vrt splošno** (garden) | 1.00 | Privzeta vrednost |
+
+> **Zakaj razlicni faktorji?** Borovnice imajo plitve korenine in so obcutljive na preveliko vodo (Kc=0.85), medtem ko zelenjava v polni rasti aktivno transpirira in potrebuje vec vode (Kc=1.05). Travnik je nekje vmes. Faktorji temeljijo na FAO-56 mid-season vrednostih.
+
+#### Nastavitev
+
+1. V **Zone Editorju** narisite cone za posamezne vrtne predele.
+2. Pri vsaki coni izberite ustrezen **tip cone** iz dropdowna: Travnik, Zelenjava, Jagodičje, Sadno drevje, Rože, ali splošni Vrt.
+3. Integracija samodejno ustvari senzorje za vsako cono.
+
+#### Senzorji
+
+Za vsako cono z vrtnim tipom se ustvarijo:
+
+| Senzor | Tip | Opis |
+|--------|-----|------|
+| `sensor.dom_{ime}_irrigation_need` | Stevilo (L) | Današnja potreba po zalivanju v litrih |
+| `binary_sensor.dom_{ime}_recommended_watering` | Da/Ne | Ali je zalivanje priporoceno (potreba > 0.5 mm) |
+
+Senzor `irrigation_need` ima atribut `forecast_daily` s 5-dnevno napovedjo:
+
+```json
+{
+  "crop_kc": 0.85,
+  "zone_type": "berries",
+  "area_m2": 4.8,
+  "today_need_mm": 1.42,
+  "correction_factor": 0.85,
+  "forecast_daily": [
+    {"date": "2026-04-03", "need_mm": 1.42, "need_liters": 6.8, "etp_mm": 2.9, "precipitation_mm": 0.0, "tip": "danes"},
+    {"date": "2026-04-04", "need_mm": 0.95, "need_liters": 4.6, "etp_mm": 2.4, "precipitation_mm": 0.5, "tip": "napoved"},
+    {"date": "2026-04-05", "need_mm": 0.0, "need_liters": 0.0, "etp_mm": 3.1, "precipitation_mm": 5.2, "tip": "napoved"}
+  ]
+}
+```
+
+#### Zgodovinska korekcija napovedi
+
+Integracija primerja **napovedane** padavine z **dejansko izmerjenimi** na prekrivajocih se datumih. Ce je napoved napovedala dez, pa ga dejansko ni bilo, se korekcijski faktor zmanjsa in napoved za prihodnje dni ustrezno prilagodi. To prepreci situacijo, ko sistem ne zaliva ker pricakuje dez, ki pa potem ne pade.
+
+#### Primer avtomatizacije
+
+```yaml
+automation:
+  - alias: "Zalivanje borovnic ko je priporoceno"
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.dom_borovnice_recommended_watering
+        to: "on"
+    condition:
+      - condition: time
+        after: "05:00:00"
+        before: "08:00:00"
+    action:
+      - service: switch.turn_on
+        target:
+          entity_id: switch.zalivanje_borovnice
+      - delay:
+          minutes: >
+            {{ (state_attr('sensor.dom_borovnice_irrigation_need', 'today_need_mm') | float * 2) | round }}
+      - service: switch.turn_off
+        target:
+          entity_id: switch.zalivanje_borovnice
+      - service: notify.mobile_app_telefon
+        data:
+          title: "Zalivanje borovnic koncano"
+          message: >
+            Zalito: {{ states('sensor.dom_borovnice_irrigation_need') }} L
+            (Kc={{ state_attr('sensor.dom_borovnice_irrigation_need', 'crop_kc') }})
+```
 
 ---
 

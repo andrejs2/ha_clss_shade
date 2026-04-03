@@ -80,6 +80,19 @@ INCA_WIDTH = 800
 INCA_HEIGHT = 600
 INCA_MAX_GHI = 1200  # W/m² max for color scale calibration
 
+# Crop coefficients (FAO-56 Kc mid-season values)
+CROP_KC: dict[str, float] = {
+    "lawn": 0.95,
+    "vegetables": 1.05,
+    "berries": 0.85,
+    "fruit_trees": 0.95,
+    "flowers": 0.90,
+    "garden": 1.00,
+}
+
+# Zone types eligible for per-zone irrigation sensors
+IRRIGABLE_ZONE_TYPES: set[str] = set(CROP_KC.keys())
+
 # Data storage
 DATA_DIR_NAME = "clss_shade"
 

@@ -227,6 +227,11 @@
     <select id="zone-type">
       <option value="custom">Custom</option>
       <option value="garden">Vrt / Garden</option>
+      <option value="lawn">Travnik / Lawn</option>
+      <option value="vegetables">Zelenjava / Vegetables</option>
+      <option value="berries">Jagodičje / Berries</option>
+      <option value="fruit_trees">Sadno drevje / Fruit trees</option>
+      <option value="flowers">Rože / Flowers</option>
       <option value="terrace">Terasa / Terrace</option>
       <option value="pv">PV paneli / Solar</option>
       <option value="parking">Parkirišče</option>
@@ -279,15 +284,20 @@
   let pendingLayer = null;
 
   const ZONE_COLORS = {
-    custom:  '#2196F3',
-    garden:  '#4CAF50',
-    terrace: '#FF9800',
-    pv:      '#FFC107',
-    parking: '#9E9E9E',
-    pool:    '#00BCD4',
-    roof:    '#F44336',
-    trees:   '#388E3C',
-    open:    '#8BC34A',
+    custom:      '#2196F3',
+    garden:      '#4CAF50',
+    lawn:        '#66BB6A',
+    vegetables:  '#8D6E63',
+    berries:     '#AB47BC',
+    fruit_trees: '#26A69A',
+    flowers:     '#EC407A',
+    terrace:     '#FF9800',
+    pv:          '#FFC107',
+    parking:     '#9E9E9E',
+    pool:        '#00BCD4',
+    roof:        '#F44336',
+    trees:       '#388E3C',
+    open:        '#8BC34A',
   };
 
   // ─── Init ───

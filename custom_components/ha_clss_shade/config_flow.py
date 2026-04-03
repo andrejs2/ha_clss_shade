@@ -30,6 +30,11 @@ _LOGGER = logging.getLogger(__name__)
 ZONE_TYPES = {
     "custom": "Custom",
     "garden": "Garden / Vrt",
+    "lawn": "Lawn / Travnik",
+    "vegetables": "Vegetables / Zelenjava",
+    "berries": "Berries / Jagodičje",
+    "fruit_trees": "Fruit trees / Sadno drevje",
+    "flowers": "Flowers / Rože",
     "terrace": "Terrace / Terasa",
     "pv": "PV Panels / Sončne celice",
     "parking": "Parking / Parkirišče",

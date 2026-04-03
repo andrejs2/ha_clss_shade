@@ -127,6 +127,11 @@
       "pv_forecast_rest_of_today_kwh": {
         "name": "PV forecast rest of today"
       }
+    },
+    "binary_sensor": {
+      "recommended_watering": {
+        "name": "Recommended watering"
+      }
     }
   }
 }

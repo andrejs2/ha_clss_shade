@@ -127,6 +127,11 @@
       "pv_forecast_rest_of_today_kwh": {
         "name": "PV preostanek danes"
       }
+    },
+    "binary_sensor": {
+      "recommended_watering": {
+        "name": "Priporočeno zalivanje"
+      }
     }
   }
 }

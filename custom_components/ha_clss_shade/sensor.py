@@ -23,7 +23,7 @@ from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, ClssShadeRuntimeData
+from .const import DOMAIN, IRRIGABLE_ZONE_TYPES, ClssShadeRuntimeData
 from .coordinator import ClssShadeCoordinator, ClssShadeData
 
 _LOGGER = logging.getLogger(__name__)
@@ -155,6 +155,11 @@ GLOBAL_SENSORS: tuple[SensorEntityDescription, ...] = (
 ZONE_ICONS = {
     "roof": "mdi:home-roof",
     "garden": "mdi:flower",
+    "lawn": "mdi:grass",
+    "vegetables": "mdi:carrot",
+    "berries": "mdi:fruit-grapes",
+    "fruit_trees": "mdi:tree-outline",
+    "flowers": "mdi:flower-tulip",
     "trees": "mdi:tree",
     "open": "mdi:grass",
     "custom": "mdi:select-group",
@@ -247,6 +252,25 @@ async def async_setup_entry(
                 ),
                 zone_name=zone_name,
                 invert=True,
+            )
+        )
+
+    # Per-zone irrigation sensors (for irrigable zone types)
+    for zone_name in coordinator.zone_names:
+        zone_type = coordinator.zone_type(zone_name)
+        if zone_type not in IRRIGABLE_ZONE_TYPES:
+            continue
+        entities.append(
+            ClssZoneIrrigationSensor(
+                coordinator,
+                entry,
+                SensorEntityDescription(
+                    key=f"zone_{zone_name}_irrigation",
+                    native_unit_of_measurement=UnitOfVolume.LITERS,
+                    state_class=SensorStateClass.MEASUREMENT,
+                    icon="mdi:watering-can",
+                ),
+                zone_name=zone_name,
             )
         )
 
@@ -521,3 +545,70 @@ class Clss3dZoneSensor(CoordinatorEntity[ClssShadeCoordinator], SensorEntity):
         if sun_pct is None:
             return None
         return round(100.0 - sun_pct, 1) if self._invert else sun_pct
+
+
+class ClssZoneIrrigationSensor(CoordinatorEntity[ClssShadeCoordinator], SensorEntity):
+    """Per-zone irrigation sensor with 5-day forecast."""
+
+    has_entity_name = True
+
+    def __init__(
+        self,
+        coordinator: ClssShadeCoordinator,
+        entry: ConfigEntry,
+        description: SensorEntityDescription,
+        zone_name: str,
+    ) -> None:
+        super().__init__(coordinator)
+        self.entity_description = description
+        self._zone_name = zone_name
+        self._attr_unique_id = f"{entry.entry_id}_{description.key}"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry.entry_id)},
+            name=entry.title,
+            manufacturer="GURS / ARSO",
+            model="CLSS LiDAR Shade Analysis",
+            entry_type=DeviceEntryType.SERVICE,
+        )
+        self._attr_name = f"{zone_name.replace('_', ' ').capitalize()} irrigation need"
+
+    @property
+    def native_value(self) -> float | None:
+        data: ClssShadeData | None = self.coordinator.data
+        if data is None:
+            return None
+        forecast = data.zone_irrigation.get(self._zone_name)
+        if forecast is None:
+            return None
+        return forecast.today_liters
+
+    @property
+    def extra_state_attributes(self) -> dict | None:
+        data: ClssShadeData | None = self.coordinator.data
+        if data is None:
+            return None
+        forecast = data.zone_irrigation.get(self._zone_name)
+        if forecast is None:
+            return None
+        attrs: dict = {
+            "crop_kc": forecast.crop_kc,
+            "zone_type": forecast.zone_type,
+            "area_m2": forecast.area_m2,
+            "today_need_mm": forecast.today_need_mm,
+            "correction_factor": forecast.correction_factor,
+        }
+        # 5-day forecast breakdown
+        daily = []
+        for day in forecast.forecast_daily:
+            daily.append({
+                "date": day.date,
+                "need_mm": day.need_mm,
+                "need_liters": day.need_liters,
+                "etp_mm": day.etp_mm,
+                "precipitation_mm": day.precipitation_mm,
+                "water_balance_mm": day.water_balance_mm,
+                "shade_percent": day.shade_percent,
+                "tip": day.tip,
+            })
+        attrs["forecast_daily"] = daily
+        return attrs

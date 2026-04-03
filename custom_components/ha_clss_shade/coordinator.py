@@ -66,7 +66,9 @@ from .shadow_engine import (
 )
 from .weather_bridge import (
     ArsoWeatherData,
+    ZoneIrrigationForecast,
     compute_poa_factor,
+    compute_zone_irrigation_forecast,
     estimate_irrigation_need,
     estimate_pv_power,
     fetch_weather_forecast,
@@ -117,6 +119,8 @@ class ClssShadeData:
     pv_forecast_next_3h_wh: float | None = None
     pv_forecast_rest_of_today_kwh: float | None = None
     forecast: ForecastData | None = None
+    # Per-zone irrigation forecasts: {zone_name: ZoneIrrigationForecast}
+    zone_irrigation: dict[str, ZoneIrrigationForecast] = field(default_factory=dict)
     # 3D zone sun percentages: {zone_name: sun_percent}
     zones_3d: dict[str, float] = field(default_factory=dict)
 
@@ -475,6 +479,35 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
 
         return None
 
+    def _compute_zone_irrigations(
+        self,
+        zone_data: dict[str, ZoneData],
+        weather: ArsoWeatherData,
+    ) -> dict[str, ZoneIrrigationForecast]:
+        """Compute per-zone irrigation forecasts for all irrigable zones."""
+        from .const import CROP_KC, IRRIGABLE_ZONE_TYPES
+
+        results: dict[str, ZoneIrrigationForecast] = {}
+        if not self._zones or not weather.agro_days:
+            return results
+
+        for name, zd in zone_data.items():
+            zone = self._zones.get(name)
+            if not zone or zone.zone_type not in IRRIGABLE_ZONE_TYPES:
+                continue
+            kc = CROP_KC.get(zone.zone_type, 1.0)
+            forecast = compute_zone_irrigation_forecast(
+                agro_days=weather.agro_days,
+                shade_percent=zd.shade_percent,
+                area_m2=zd.area_m2,
+                crop_kc=kc,
+                zone_type=zone.zone_type,
+            )
+            if forecast:
+                results[name] = forecast
+
+        return results
+
     # ------------------------------------------------------------------
     # Forecast helpers
     # ------------------------------------------------------------------
@@ -736,6 +769,11 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
                         area_m2=area,
                     )
 
+            # Per-zone irrigation forecasts
+            zone_irrigations = {}
+            if weather:
+                zone_irrigations = self._compute_zone_irrigations(zone_data, weather)
+
             # Forecast refresh at night too (tomorrow's forecast is useful)
             shadow_stale = (
                 self._shadow_forecast_computed_at is None
@@ -792,6 +830,7 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
                 pv_power_estimate=0.0,
                 pv_power_real=0.0,
                 irrigation_need=irrigation,
+                zone_irrigation=zone_irrigations,
                 zones_3d=zones_3d_night,
                 pv_forecast_today_kwh=round(forecast.today.total_kwh, 2) if forecast and forecast.today else None,
                 pv_forecast_tomorrow_kwh=round(forecast.tomorrow.total_kwh, 2) if forecast and forecast.tomorrow else None,
@@ -866,7 +905,7 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
                     zone_data, mean_sun, weather, sun
                 )
 
-                # Irrigation estimate using garden zones
+                # Irrigation estimate using garden zones (global, backwards compat)
                 garden_info = self._get_irrigation_garden(zone_data)
                 if garden_info:
                     shade_pct, area = garden_info
@@ -877,6 +916,11 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
                         precipitation_forecast=weather.precipitation_forecast,
                         area_m2=area,
                     )
+
+            # Per-zone irrigation forecasts
+            zone_irrigations = {}
+            if weather:
+                zone_irrigations = self._compute_zone_irrigations(zone_data, weather)
 
             # Read real PV power and calculate performance factor
             pv_real = None
@@ -973,6 +1017,7 @@ class ClssShadeCoordinator(DataUpdateCoordinator[ClssShadeData]):
                 pv_power_real=pv_real,
                 pv_performance_factor=pv_perf,
                 irrigation_need=irrigation,
+                zone_irrigation=zone_irrigations,
                 zones_3d=zones_3d_data,
                 pv_forecast_today_kwh=round(forecast.today.total_kwh, 2) if forecast and forecast.today else None,
                 pv_forecast_tomorrow_kwh=round(forecast.tomorrow.total_kwh, 2) if forecast and forecast.tomorrow else None,
