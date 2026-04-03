@@ -198,6 +198,25 @@ Ce opazite, da se sencenje nenadoma spremeni (npr. iz 20% na 80% v 15 minutah), 
 
 ---
 
+## Cas izracuna po zagonu
+
+Po namestitvi ali restartu Home Assistant potrebujejo nekateri senzorji **cas za izracun** preden prikazejo vrednosti:
+
+| Senzor | Cas do prve vrednosti | Razlog |
+|--------|----------------------|--------|
+| Senca, sonce, cone (shade/sun %) | **~30 sekund** | En shadow map izracun |
+| PV ocena moci | **~30 sekund** | Odvisen od shadow mapa |
+| Irrigation (zalivanje po conah) | **~30 sekund** | Branje ARSO agrometeo |
+| **PV napoved danes/jutri** | **~15-30 minut** | Shadow forecast racuna senco za vsako uro 5 dni naprej |
+| **PV napoved 5 dni** | **~30-40 minut** | Vsi dnevi morajo biti izracunani |
+| Oblacnost, agrometeo | **~30 sekund** | Branje iz HA senzorjev |
+
+> **Zakaj PV napoved traja?** Shadow forecast mora izracunati sencno mapo za vsako uro vsakega od 5 dni (800×800 grid). To je racunsko zahtevno (~30s per korak × ~60 korakov). Po prvem izracunu se podatki kesirajo in naslednje posodobitve so hitrejse (samo danes se preracuna, oddaljeni dnevi se vzamejo iz cache-a).
+>
+> Med cakanjem bodo PV napovedi prikazovale **"Neznano"** — to je pricakovano in ni napaka.
+
+---
+
 ## Nastavitev — korak po korak
 
 ### 1. Dodajte integracijo
