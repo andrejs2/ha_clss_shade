@@ -47,11 +47,28 @@ Namesto poenostavljenih modelov ali rocnega nastavljanja kotov, integracija upor
 
 Ta integracija je **prilagojena za Slovenijo** in zaenkrat deluje **samo na obmocju Republike Slovenije**.
 
-Razlog: podatkovni vir so **LiDAR podatki** iz projekta **CLSS (Ciklicno Lasersko Skeniranje Slovenije)**, ki ga izvaja Geodetska uprava RS (GURS). Gre za sistematicno lasersko skeniranje celotne drzave iz letala — vsak kvadratni meter Slovenije je poskeniran z gostoto **10 tock/m2**, kar pomeni, da integracija pozna vsako stavbo, drevo in teren v vasi okolici na priblizno 10 cm natancno.
+Razlog ni samo en podatkovni vir — integracija zdruzuje **vec slovenskih javnih podatkovnih virov**, ki skupaj omogocajo natancno analizo sencenja, PV napoved in pametno zalivanje:
 
-Ti podatki so **javno dostopni in brezplacni** (licenca CC 4.0, obvezna atribucija), ampak obstajajo samo za Slovenijo. Ce zivite zunaj Slovenije, ta integracija zaenkrat ne bo delovala.
+### Podatkovni viri
 
-> **Tehnicno:** Podatki so v formatu LAZ 1.4, koordinatni sistem EPSG:3794 (D96/TM), z 21 ASPRS klasifikacijskimi razredi (tla, stavbe, vegetacija, voda, mostovi...). Posamezna ploscica pokriva 1x1 km in je velika ~30-50 MB.
+| Vir | Podatki | Uporaba v integraciji | Frekvenca |
+|-----|---------|----------------------|-----------|
+| **[GURS / CLSS](https://www.e-prostor.gov.si/)** | LiDAR oblak tock (10 tock/m2) — stavbe, drevesa, teren | 3D model okolice za izracun sencenja | Enkratni prenos |
+| **[ARSO Weather](https://www.arso.gov.si/)** | Soncno sevanje, oblacnost, temperatura, padavine | PV ocena, vremenska napoved | Vsakih 5 min |
+| **[ARSO Agrometeo](http://www.meteo.si/)** | Evapotranspiracija (ETP), vodna bilanca, padavine — 5 dni nazaj + 10 dni naprej | Pametno zalivanje po conah | Dnevno |
+| **[ARSO INCA](https://meteo.arso.gov.si/)** | Nowcasting soncnega sevanja (1km grid, 15 min) | Natancna GHI za PV oceno (JV Slovenija) | Vsakih 15 min |
+| **[Open-Meteo](https://open-meteo.com/)** | GHI napoved (5 dni), DEM horizont (30m resolucija) | PV napoved, oddaljene hribovske ovire | Vsakih 30 min |
+| **[Esri World Imagery](https://www.arcgis.com/)** | Satelitski posnetki | Ozadje za 2D in 3D prikaz | Ob nalaganju |
+
+### Zakaj samo Slovenija?
+
+- **LiDAR (CLSS)** — sistematicno lasersko skeniranje celotne drzave iz letala. Vsak kvadratni meter Slovenije je poskeniran z gostoto 10 tock/m2, kar pomeni, da integracija pozna vsako stavbo, drevo in teren v vasi okolici na priblizno 10 cm natancno. Ti podatki so **javno dostopni in brezplacni** (licenca CC 4.0), ampak obstajajo samo za Slovenijo.
+- **ARSO Agrometeo** — evapotranspiracija in vodna bilanca sta kljucna za pametno zalivanje. Ti podatki so specificni za slovenske meteoroloske postaje.
+- **ARSO INCA** — nowcasting sevanja za natancno GHI. Pokriva le JV Slovenijo (za ostalo se uporablja Open-Meteo kot fallback).
+
+Ce zivite zunaj Slovenije, ta integracija zaenkrat ne bo delovala. Open-Meteo podatki so sicer globalni, ampak brez LiDAR modela in ARSO agrometeo podatkov integracija ne more izracunati sencenja in zalivanja.
+
+> **Tehnicno:** LiDAR podatki so v formatu LAZ 1.4, koordinatni sistem EPSG:3794 (D96/TM), z 21 ASPRS klasifikacijskimi razredi (tla, stavbe, vegetacija, voda, mostovi...). Posamezna ploscica pokriva 1x1 km in je velika ~30-50 MB.
 
 ---
 
@@ -348,11 +365,71 @@ Senzor `irrigation_need` ima atribut `forecast_daily` s 5-dnevno napovedjo:
 }
 ```
 
+#### Sezonski faktor
+
+Integracija samodejno prilagodi potrebo po zalivanju glede na letni cas:
+
+| Mesec | Faktor | Logika |
+|-------|--------|--------|
+| Dec-Feb | **0.0** | Zima — ne zalivamo (razen rastlinjak) |
+| Mar | 0.3 | Zgodnja pomlad — minimalno |
+| Apr | 0.6 | Pomlad — zmerno |
+| Maj | 0.9 | Pozna pomlad — skoraj polna potreba |
+| **Jun-Avg** | **1.0** | Poletje — polna sezona |
+| Sep | 0.9 | Pozno poletje |
+| Okt | 0.5 | Jesen — zmanjsano |
+| Nov | 0.2 | Pozna jesen — minimalno |
+
+Sezonski faktor se prikazuje v atributu `seasonal_factor` za vsak dan napovedi.
+
+#### Rastlinjak (greenhouse)
+
+Za rastlinjake je na voljo poseben tip cone `Rastlinjak / Greenhouse`, ki se razlikuje od zunanjih con:
+
+- **Ignorira padavine** — dez ne pride v rastlinjak, zato se padavine ne odstevajo od potrebe
+- **Brez sezonske redukcije** — rastlinjak zalivamo celo leto (seasonal_factor = 1.0 vedno)
+- Kc = 1.0 (privzeto; prilagodite glede na pridelek v rastlinjaku)
+
 #### Zgodovinska korekcija napovedi
 
-Integracija primerja **napovedane** padavine z **dejansko izmerjenimi** na prekrivajocih se datumih. Ce je napoved napovedala dez, pa ga dejansko ni bilo, se korekcijski faktor zmanjsa in napoved za prihodnje dni ustrezno prilagodi. To prepreci situacijo, ko sistem ne zaliva ker pricakuje dez, ki pa potem ne pade.
+Integracija primerja **napovedane** padavine z **dejansko izmerjenimi** na prekrivajocih se datumih (ARSO agrometeo hrani 5 dni meritev in 10 dni napovedi). Ce je napoved napovedala dez, pa ga dejansko ni bilo, se korekcijski faktor zmanjsa in napoved za prihodnje dni ustrezno prilagodi.
 
-#### Primer avtomatizacije
+Primer: napoved je napovedala 10 mm deza, dejansko je padlo 3 mm → `correction_factor = 0.3` → prihodnje napovedane padavine se pomnozijo s 0.3, kar poveca potrebo po zalivanju. Faktor je omejen na razpon [0.5, 2.0].
+
+To prepreci situacijo, ko sistem ne zaliva ker pricakuje dez, ki pa potem ne pade.
+
+#### Trajanje zalivanja (opcijsko)
+
+Ce v Zone Editorju pri coni vnesete **pretok zalivanja v L/min** (npr. 8 L/min za kapljicno namakanje), integracija izracuna **trajanje zalivanja v minutah**:
+
+```
+duration_minutes = today_liters / throughput_lpm
+```
+
+Primer: 28 L / 8 L/min = **3.5 minut**
+
+Atribut `duration_minutes` je na voljo na senzorjih `irrigation_need` in `recommended_watering`.
+
+#### Scenariji uporabe
+
+**Kapljicno namakanje borovnic:**
+Borovnice imajo plitve korenine in so obcutljive na preveliko vodo. Izberite tip cone `Jagodičje / Berries` (Kc=0.85) — integracija samodejno zmanjsa potrebo za 15% glede na splosni vrt. Vnesite pretok kapljicnega sistema (npr. 4 L/min) in avtomatizirajte zalivanje.
+
+**Vec con zelenjave z razlicnim sencenjem:**
+Paradiznik na polnem soncu potrebuje vec vode kot solata v polsenci. Narisite loceni coni — integracija bo za vsako izracunala potrebo glede na dejansko sencenje iz LiDAR modela (drevesa, stavbe, nadstreski).
+
+**Rastlinjak cez zimo:**
+Zunaj ne zalivamo (seasonal_factor = 0.0), ampak v rastlinjaku zalivamo celo leto. Izberite tip cone `Rastlinjak / Greenhouse` — sezonski faktor ne vpliva, padavine se ne odstevajo.
+
+**Vecji vrt z avtomatskim zalivanjem:**
+Za vsako cono nastavite pretok v L/min. Avtomatizacija prebere `duration_minutes` in odpre ventil za tocno pravo stevilo minut.
+
+**Trata vs. cvetlicne grede:**
+Trata (Kc=0.95) rabi skoraj toliko vode kot referenca, cvetlice (Kc=0.90) nekoliko manj. Razlika je majhna, ampak pri vecji povrsini se nabere.
+
+#### Primeri avtomatizacij
+
+**Zalivanje z duration_minutes (ce imate nastavljen pretok):**
 
 ```yaml
 automation:
@@ -371,7 +448,7 @@ automation:
           entity_id: switch.zalivanje_borovnice
       - delay:
           minutes: >
-            {{ (state_attr('sensor.dom_borovnice_irrigation_need', 'today_need_mm') | float * 2) | round }}
+            {{ state_attr('sensor.dom_borovnice_irrigation_need', 'duration_minutes') | float(5) }}
       - service: switch.turn_off
         target:
           entity_id: switch.zalivanje_borovnice
@@ -380,7 +457,48 @@ automation:
           title: "Zalivanje borovnic koncano"
           message: >
             Zalito: {{ states('sensor.dom_borovnice_irrigation_need') }} L
-            (Kc={{ state_attr('sensor.dom_borovnice_irrigation_need', 'crop_kc') }})
+            v {{ state_attr('sensor.dom_borovnice_irrigation_need', 'duration_minutes') }} min
+```
+
+**Dnevno porocilo o zalivanju (vseh con):**
+
+```yaml
+automation:
+  - alias: "Jutranje porocilo o zalivanju"
+    trigger:
+      - platform: time
+        at: "06:00:00"
+    action:
+      - service: notify.mobile_app_telefon
+        data:
+          title: "Zalivanje — danes"
+          message: >
+            Borovnice: {{ states('sensor.dom_borovnice_irrigation_need') }} L
+            Zelenjava: {{ states('sensor.dom_zelenjava_irrigation_need') }} L
+            Trata: {{ states('sensor.dom_trata_irrigation_need') }} L
+            Sezonski faktor: {{ state_attr('sensor.dom_borovnice_irrigation_need', 'forecast_daily')[0].seasonal_factor }}
+```
+
+**Opozorilo ce prihodnji dan potrebuje veliko vode:**
+
+```yaml
+automation:
+  - alias: "Opozorilo - jutri veliko zalivanja"
+    trigger:
+      - platform: time
+        at: "20:00:00"
+    condition:
+      - condition: template
+        value_template: >
+          {% set forecast = state_attr('sensor.dom_zelenjava_irrigation_need', 'forecast_daily') %}
+          {{ forecast[1].need_liters | float > 50 if forecast | length > 1 else false }}
+    action:
+      - service: notify.mobile_app_telefon
+        data:
+          title: "Jutri veliko zalivanja"
+          message: >
+            {% set f = state_attr('sensor.dom_zelenjava_irrigation_need', 'forecast_daily')[1] %}
+            Zelenjava jutri potrebuje {{ f.need_liters }} L (ETP={{ f.etp_mm }} mm, padavine={{ f.precipitation_mm }} mm)
 ```
 
 ---
